@@ -1,0 +1,74 @@
+{
+ "laps": {
+  "0": [
+   {
+    "FlagState": 1,
+    "Note": "Practice:  #25 spins in turn 4 in the opening minutes of practice and gets stuck in the gravel.  #35 suffers a major engine failure off turn 6B.  #1 suffers a flat right front tire and has to limp back to pit road, #9 changes an alternator at the end of practice.",
+    "NoteID": 62757,
+    "DriverIDs": [
+     4416,
+     4516,
+     4481,
+     4469
+    ]
+   },
+   {
+    "FlagState": 1,
+    "Note": "Qualifying:  #35 does not make a qualifying lap after his engine issues in practice",
+    "NoteID": 62760,
+    "DriverIDs": [
+     4516
+    ]
+   },
+   {
+    "FlagState": 1,
+    "Note": "To the rear:  #35, #99 (engine changes)",
+    "NoteID": 62815,
+    "DriverIDs": [
+     4516,
+     4419
+    ]
+   }
+  ],
+  "1": [
+   {
+    "FlagState": 1,
+    "Note": "#1 leads the field to green from the inside, #9 outside.  #21 dives inside to make it 3 wide in turn 1 but #9 clears for the lead in turn 2.  #18 hits the back of #87 in turn 1 and suffers nose damage near 17th.  #1 gets 2nd in the esses as #21 drops back to 3rd.  #1 challenges #9 for the lead in turns 16-18.",
+    "NoteID": 62816,
+    "DriverIDs": [
+     4481,
+     4469,
+     4133,
+     4469,
+     4459,
+     4479,
+     4481,
+     4133,
+     4481,
+     4469
+    ]
+   }
+  ],
+  "2": [
+   {
+    "FlagState": 1000,
+    "Note": "#9 is now the 2nd driver to lead in each of their first 10 NOS road course starts (Ty Gibbs)",
+    "NoteID": 62817,
+    "DriverIDs": [
+     4469
+    ]
+   }
+  ],
+  "3": [
+   {
+    "FlagState": 1,
+    "Note": "#7 looks under #21 for 3rd in turn 1 and clears for the spot in turn 2.  ",
+    "NoteID": 62818,
+    "DriverIDs": [
+     34,
+     4133
+    ]
+   }
+  ]
+ }
+}
