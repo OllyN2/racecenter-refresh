@@ -4,6 +4,7 @@
   import { pointsMatchEntries } from '../lib/normalize';
   import { useFeed } from '../lib/poll.svelte';
   import type { PointsRow, WeekendRace } from '../lib/types';
+  import CarNumber from './CarNumber.svelte';
   import DriverName from './DriverName.svelte';
   import FeedStatus from './FeedStatus.svelte';
 
@@ -46,7 +47,7 @@
               {#each st.results.slice(0, 10) as r (r.driver_id)}
                 <li>
                   <span class="pos num">{r.finishing_position}</span>
-                  <span class="car num">#{r.car_number}</span>
+                  <span class="car"><CarNumber {series} number={r.car_number} height={20} /></span>
                   <span class="nm">{parseDriver(r.driver_fullname).name}</span>
                   <span class="pts num">{r.stage_points} pts</span>
                 </li>
@@ -90,7 +91,7 @@
             {#each leaders as l, i (`${l.start_lap}-${i}`)}
               <tr>
                 <td class="num">{l.start_lap}–{l.end_lap}</td>
-                <td class="num">#{l.car_number}</td>
+                <td class="car"><CarNumber {series} number={l.car_number} height={20} /></td>
                 <td>{nameByCar.get(l.car_number) ?? ''}</td>
                 <td class="r">{l.end_lap - l.start_lap + 1}</td>
               </tr>
@@ -125,7 +126,7 @@
             {#each points as p, i (p.driver_id)}
               <tr class:cut={hasChase && i === chaseCut}>
                 <td class="r pos">{p.points_position}</td>
-                <td class="r car">{p.car_number}</td>
+                <td class="car"><CarNumber {series} number={p.car_number} /></td>
                 <td><DriverName driver={{ ...parseDriver(`${p.first_name} ${p.last_name}`), chase: p.is_in_chase, rookie: p.is_rookie }} /></td>
                 <td class="r strong">{p.points}</td>
                 <td class="r">{p.delta_leader ? p.delta_leader : '—'}</td>
@@ -197,7 +198,8 @@
   }
   li {
     display: grid;
-    grid-template-columns: 22px 38px 1fr auto;
+    grid-template-columns: 22px 30px 1fr auto;
+    align-items: center;
     gap: 6px;
     padding: 4px 0;
     border-bottom: 1px solid var(--grid);

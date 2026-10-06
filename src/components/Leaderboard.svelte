@@ -2,10 +2,11 @@
   import { untrack } from 'svelte';
   import { lapTime, speed } from '../lib/format';
   import type { BoardSource, LeaderboardRow } from '../lib/normalize';
+  import CarNumber from './CarNumber.svelte';
   import DriverName from './DriverName.svelte';
   import MakeBadge from './MakeBadge.svelte';
 
-  let { sources }: { sources: BoardSource[] } = $props();
+  let { sources, series }: { sources: BoardSource[]; series: number } = $props();
 
   let picked = $state<string | null>(null);
   const active = $derived(sources.find((s) => s.id === picked) ?? sources[0]);
@@ -97,7 +98,7 @@
                   {#if d}{d > 0 ? '▲' : '▼'} {Math.abs(d)}{:else}–{/if}
                 </td>
               {/if}
-              <td class="r car">{r.car}</td>
+              <td class="car"><CarNumber {series} number={r.car} height={28} /></td>
               <td class="driver-cell">
                 <DriverName driver={r.driver} sub={r.sponsor || r.team} />
               </td>

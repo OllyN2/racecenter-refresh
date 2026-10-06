@@ -3,6 +3,7 @@
   import { flagInfo, parseDriver } from '../lib/format';
   import { useFeed } from '../lib/poll.svelte';
   import type { PitStop } from '../lib/types';
+  import CarNumber from './CarNumber.svelte';
   import FeedStatus from './FeedStatus.svelte';
 
   let { series, raceId, isLive }: { series: number; raceId: number; isLive: boolean } = $props();
@@ -76,7 +77,7 @@
               {@const t = tires(s)}
               <tr>
                 <td class="r">{s.lap_count || '—'}</td>
-                <td class="r car">{s.vehicle_number}</td>
+                <td class="car"><CarNumber {series} number={s.vehicle_number} /></td>
                 <td class="name">{parseDriver(s.driver_name).name}</td>
                 <td class="wide">{flagInfo(s.pit_in_flag_status).label}</td>
                 <td>

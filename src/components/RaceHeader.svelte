@@ -2,6 +2,7 @@
   import { clockTime, localDateTime, parseDriver, RUN_TYPES, SERIES, sessionLabel, speed } from '../lib/format';
   import { hasFinalResults, raceStartMs, stageEnds } from '../lib/normalize';
   import type { LiveFeed, RaceSummary, WeekendRace } from '../lib/types';
+  import CarNumber from './CarNumber.svelte';
   import FlagPill from './FlagPill.svelte';
 
   let {
@@ -86,7 +87,7 @@
       <div><dt>Race</dt><dd>{race.scheduled_laps} <span class="unit">laps</span></dd></div>
     {:else if finished}
       {#if winner}
-        <div class="wide"><dt>Winner</dt><dd>#{winner.car_number} {parseDriver(winner.driver_fullname).name}</dd></div>
+        <div class="wide"><dt>Winner</dt><dd class="winner"><CarNumber series={race.series_id} number={winner.car_number} height={26} />{parseDriver(winner.driver_fullname).name}</dd></div>
       {/if}
       <div><dt>Margin</dt><dd>{summary.margin_of_victory || '—'} <span class="unit">sec</span></dd></div>
       <div><dt>Avg speed</dt><dd>{speed(summary.average_speed)} <span class="unit">mph</span></dd></div>
@@ -200,6 +201,11 @@
     font-size: 18px;
     font-weight: 600;
   }
+  .winner {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
   dd strong {
     font-size: 22px;
   }
@@ -221,7 +227,7 @@
   .fill {
     position: absolute;
     inset: 0 auto 0 0;
-    background: var(--accent);
+    background: var(--good);
     opacity: 0.85;
     border-radius: 0 4px 4px 0;
     transition: width 0.6s ease;

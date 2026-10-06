@@ -57,13 +57,14 @@ export function signed(n: number): string {
   return '0';
 }
 
-const MAKES: Record<string, { short: string; name: string; key: 'chv' | 'frd' | 'tyt' | 'other' }> = {
+const MAKES: Record<string, { short: string; name: string; key: 'chv' | 'frd' | 'tyt' | 'ram' | 'other' }> = {
   chv: { short: 'CHV', name: 'Chevrolet', key: 'chv' },
   chevrolet: { short: 'CHV', name: 'Chevrolet', key: 'chv' },
   frd: { short: 'FRD', name: 'Ford', key: 'frd' },
   ford: { short: 'FRD', name: 'Ford', key: 'frd' },
   tyt: { short: 'TYT', name: 'Toyota', key: 'tyt' },
   toyota: { short: 'TYT', name: 'Toyota', key: 'tyt' },
+  ram: { short: 'RAM', name: 'Ram', key: 'ram' },
 };
 
 export function makeInfo(raw: string | null | undefined) {

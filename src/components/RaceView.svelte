@@ -65,7 +65,7 @@
 <div class="panel">
   {#if tab === 'leaderboard'}
     {#if sources.length}
-      <Leaderboard {sources} />
+      <Leaderboard {sources} series={race.series_id} />
     {:else}
       <div class="card">
         <FeedStatus state={weekend.feed.state} unavailable="The entry list hasn't been published yet." />

@@ -46,6 +46,9 @@
     background: repeating-conic-gradient(#0b0b0b 0 25%, #fff 0 50%) 0 0 / 6px 6px;
     box-shadow: inset 0 0 0 1px var(--axis);
   }
+  .green {
+    background: var(--green-wash);
+  }
   .yellow {
     background: var(--caution-wash);
   }
