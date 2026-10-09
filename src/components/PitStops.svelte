@@ -1,21 +1,17 @@
 <script lang="ts">
-  import { feeds } from '../lib/api';
   import { flagInfo, parseDriver } from '../lib/format';
-  import { useFeed } from '../lib/poll.svelte';
+  import type { FeedState } from '../lib/poll.svelte';
   import type { PitStop } from '../lib/types';
   import CarNumber from './CarNumber.svelte';
   import FeedStatus from './FeedStatus.svelte';
 
-  let { series, raceId, isLive }: { series: number; raceId: number; isLive: boolean } = $props();
+  let { series, feedState }: { series: number; feedState: FeedState<PitStop[]> } = $props();
 
-  const pits = useFeed<PitStop[]>(
-    () => feeds.pits(series, raceId),
-    () => (isLive ? 15_000 : null),
-  );
+  const data = $derived(feedState.status === 'ok' ? feedState.data : undefined);
 
   let car = $state('');
   const stops = $derived(
-    [...(pits.feed.data ?? [])].sort((a, b) => b.pit_in_race_time - a.pit_in_race_time),
+    [...(data ?? [])].sort((a, b) => b.pit_in_race_time - a.pit_in_race_time),
   );
   const cars = $derived.by(() => {
     const m = new Map<string, string>();
@@ -42,7 +38,7 @@
 </script>
 
 <div class="card">
-  {#if pits.feed.data}
+  {#if data}
     <div class="toolbar">
       <label>
         <span class="visually-hidden">Car</span>
@@ -104,7 +100,7 @@
       <p class="empty">No pit stops yet.</p>
     {/if}
   {:else}
-    <FeedStatus state={pits.feed.state} unavailable="Pit stop data appears once cars hit pit road." />
+    <FeedStatus state={feedState} unavailable="Pit stop data appears once cars hit pit road." />
   {/if}
 </div>
 

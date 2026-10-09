@@ -1,12 +1,15 @@
 <script lang="ts">
-  import { untrack } from 'svelte';
+  import { tick, untrack } from 'svelte';
   import { lapTime, speed } from '../lib/format';
+  import type { CarInsight, RaceInsights } from '../lib/insights';
   import type { BoardSource, LeaderboardRow } from '../lib/normalize';
   import CarNumber from './CarNumber.svelte';
+  import DriverDetail from './DriverDetail.svelte';
   import DriverName from './DriverName.svelte';
+  import Insights from './Insights.svelte';
   import MakeBadge from './MakeBadge.svelte';
 
-  let { sources, series }: { sources: BoardSource[]; series: number } = $props();
+  let { sources, series, insights = null }: { sources: BoardSource[]; series: number; insights?: RaceInsights | null } = $props();
 
   let picked = $state<string | null>(null);
   const active = $derived(sources.find((s) => s.id === picked) ?? sources[0]);
@@ -43,6 +46,29 @@
   function moved(r: LeaderboardRow): number | null {
     return r.pos != null && r.start != null ? r.start - r.pos : null;
   }
+
+  // Race analysis only applies to the race itself, not practice or qualifying sessions.
+  const analysis = $derived(insights && (mode === 'race' || mode === 'final') ? insights : null);
+  const COLS = 10;
+
+  let open = $state<string | null>(null);
+
+  function canOpen(ins: CarInsight | undefined): ins is CarInsight {
+    return !!ins && (ins.stints.length > 0 || !!ins.stats || ins.restarts.length > 0);
+  }
+
+  async function show(car: string) {
+    const race = sources.find((s) => s.mode === 'race' || s.mode === 'final');
+    if (race && race.id !== active?.id) picked = race.id;
+    open = car;
+    await tick();
+    document.getElementById(`row-${car}`)?.scrollIntoView({ block: 'start', behavior: 'smooth' });
+  }
+
+  function tireNote(t: NonNullable<CarInsight['tire']>): string {
+    if (t.fromStart) return 'since start';
+    return t.tires == null ? 'since stop' : `${t.tires} tires`;
+  }
 </script>
 
 {#if sources.length > 1}
@@ -54,6 +80,8 @@
     {/each}
   </div>
 {/if}
+
+{#if analysis}<Insights cards={analysis.cards} onpick={show} />{/if}
 
 <div class="card">
   {#if !active || !active.rows.length}
@@ -71,9 +99,9 @@
             {#if mode !== 'entry'}<th class="r">Gap</th>{/if}
             {#if mode === 'race'}
               <th class="r">Last lap</th>
-              <th class="r wide">Best lap</th>
+              <th class="r wide" title="Average of the last 5 green-flag laps">Pace</th>
               <th class="r wide">Led</th>
-              <th class="r wide">Pits</th>
+              <th class="r wide" title="Laps on the current tires">Tires</th>
             {:else if mode === 'timed'}
               <th class="r">Best lap</th>
               <th class="r wide">mph</th>
@@ -91,7 +119,20 @@
         <tbody>
           {#each active.rows as r (r.key)}
             {@const d = moved(r)}
-            <tr class={flash[r.key] ? `flash-${flash[r.key]}` : ''}>
+            {@const ins = analysis?.cars.get(r.car)}
+            {@const expandable = canOpen(ins)}
+            {#snippet badges()}
+              {#if ins?.onPitRoad}<span class="badge pit" title="On pit road">Pit</span>
+              {:else if active?.live && r.onTrack === false && (r.laps ?? 0) > 0}<span class="badge" title="Not on track">Off</span>{/if}
+              {#if ins?.dvp}<span class="badge dvp" title="Under the damaged vehicle policy clock">DVP</span>{/if}
+            {/snippet}
+            <tr
+              id="row-{r.car}"
+              class={flash[r.key] ? `flash-${flash[r.key]}` : ''}
+              class:expandable
+              class:open={expandable && open === r.car}
+              onclick={() => expandable && (open = open === r.car ? null : r.car)}
+            >
               {#if mode !== 'entry'}<td class="r pos">{r.pos ?? '—'}</td>{/if}
               {#if mode === 'race' || mode === 'final'}
                 <td class="r wide delta" class:up={d && d > 0} class:down={d && d < 0}>
@@ -100,20 +141,39 @@
               {/if}
               <td class="car"><CarNumber {series} number={r.car} height={28} /></td>
               <td class="driver-cell">
-                <DriverName driver={r.driver} sub={r.sponsor || r.team} />
+                {#if expandable}
+                  <button class="expand" aria-expanded={open === r.car} aria-controls="detail-{r.car}">
+                    <DriverName driver={r.driver} sub={r.sponsor || r.team} {badges} />
+                  </button>
+                {:else}
+                  <DriverName driver={r.driver} sub={r.sponsor || r.team} {badges} />
+                {/if}
               </td>
               <td class="wide"><MakeBadge make={r.make} /></td>
               {#if mode !== 'entry'}
                 <td class="r gap">
-                  {#if active.live && r.onTrack === false}<span class="off">Off track</span>{/if}
                   {r.gap}
+                  {#if mode === 'race' && ins?.battle?.notable}
+                    {@const closing = (ins.battle.rate ?? 0) > 0.02}
+                    <span class="sub" class:closing title={closing ? `Closing ${ins.battle.rate!.toFixed(2)}s a lap` : 'Gap to the car ahead'}>
+                      {ins.battle.gap.toFixed(3)} to P{ins.battle.aheadPos}
+                    </span>
+                  {/if}
                 </td>
               {/if}
               {#if mode === 'race'}
                 <td class="r">{lapTime(r.lastLap)}</td>
-                <td class="r wide">{lapTime(r.bestLap)}</td>
+                <td class="r wide">
+                  <span class:fast={ins?.fastest} title={ins?.fastest ? 'Fastest on track right now' : undefined}>{lapTime(ins?.pace)}</span>
+                </td>
                 <td class="r wide">{r.lapsLed || '–'}</td>
-                <td class="r wide">{r.pits ?? '–'}</td>
+                <td class="r wide">
+                  {#if ins?.onPitRoad}
+                    <span class="muted">Pitting</span>
+                  {:else if ins?.tire}
+                    {ins.tire.laps} {ins.tire.laps === 1 ? 'lap' : 'laps'}<span class="sub">{tireNote(ins.tire)}</span>
+                  {:else}–{/if}
+                </td>
               {:else if mode === 'timed'}
                 <td class="r">{lapTime(r.bestLap)}</td>
                 <td class="r wide">{speed(r.bestSpeed)}</td>
@@ -127,6 +187,11 @@
                 <td class="wide team">{r.team}</td>
               {/if}
             </tr>
+            {#if expandable && open === r.car}
+              <tr class="detail-row" id="detail-{r.car}">
+                <td colspan={COLS}><DriverDetail insight={ins} /></td>
+              </tr>
+            {/if}
           {/each}
         </tbody>
       </table>
@@ -172,14 +237,66 @@
   .gap {
     font-weight: 600;
   }
-  .off {
+  .sub {
+    display: block;
     font-size: 11px;
-    font-weight: 600;
+    font-weight: 500;
     color: var(--muted);
+  }
+  .sub.closing {
+    color: var(--up-text);
+    font-weight: 600;
+  }
+  .muted {
+    color: var(--muted);
+  }
+  .fast {
+    background: var(--green-wash);
+    color: var(--up-text);
+    font-weight: 700;
+    border-radius: 4px;
+    padding: 2px 5px;
+  }
+  .badge {
+    font-size: 10px;
+    font-weight: 700;
+    letter-spacing: 0.03em;
+    text-transform: uppercase;
+    color: var(--ink-2);
     background: var(--surface-3);
     border-radius: 4px;
     padding: 2px 5px;
-    margin-right: 6px;
+  }
+  .badge.pit {
+    color: var(--accent);
+    background: var(--accent-wash);
+  }
+  .badge.dvp {
+    color: var(--ink);
+    background: var(--caution-wash);
+  }
+  tr.expandable {
+    cursor: pointer;
+  }
+  .expand {
+    all: unset;
+    display: block;
+    cursor: pointer;
+  }
+  .expand:focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 2px;
+    border-radius: 4px;
+  }
+  tr.open td {
+    background: var(--surface-2);
+    border-bottom-color: transparent;
+  }
+  .detail-row td {
+    background: var(--surface-2);
+  }
+  table.data tbody tr.detail-row:hover td {
+    background: var(--surface-2);
   }
   .status {
     color: var(--ink-2);
@@ -204,8 +321,14 @@
     }
   }
   @media (max-width: 640px) {
-    .wide {
+    .wide,
+    .gap .sub {
       display: none;
+    }
+    table.data td,
+    table.data th {
+      padding-left: 6px;
+      padding-right: 6px;
     }
   }
 </style>

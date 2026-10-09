@@ -116,6 +116,7 @@
         <RaceView
           race={current}
           live={liveActive && liveData?.race_id === current.race_id ? liveData : undefined}
+          snapshot={liveData?.race_id === current.race_id ? liveData : undefined}
           liveUpdatedAt={liveFeed.feed.updatedAt}
           tab={route.current.tab}
         />

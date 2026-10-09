@@ -1,32 +1,59 @@
 <script lang="ts">
   import { feeds } from '../lib/api';
   import { flagInfo } from '../lib/format';
-  import { noteGroups } from '../lib/normalize';
+  import { clipsByLap, noteGroups, type Clip } from '../lib/normalize';
   import { useFeed } from '../lib/poll.svelte';
-  import type { LapNotes } from '../lib/types';
+  import type { ClipFeed, LapNote, LapNotes } from '../lib/types';
   import FeedStatus from './FeedStatus.svelte';
 
-  let { year, series, raceId, isLive }: { year: number; series: number; raceId: number; isLive: boolean } = $props();
+  let {
+    year,
+    series,
+    raceId,
+    isLive,
+    startMs,
+  }: { year: number; series: number; raceId: number; isLive: boolean; startMs: number } = $props();
 
   const notes = useFeed<LapNotes>(
     () => feeds.lapNotes(year, series, raceId),
     () => (isLive ? 15_000 : null),
   );
+  // Highlight clips get posted a few minutes after the moment; unchanged polls are cheap 304s.
+  const clipFeed = useFeed<ClipFeed>(
+    () => feeds.clips(year, series, raceId),
+    () => (isLive ? 60_000 : null),
+  );
+  const clips = $derived(clipsByLap(clipFeed.feed.data, (startMs || 0) - 3600_000));
 
+  let playing = $state<number | null>(null);
   let query = $state('');
-  const groups = $derived(notes.feed.data ? noteGroups(notes.feed.data) : []);
+
+  // Laps with a clip but no written note still get a row.
+  const groups = $derived.by(() => {
+    const byLap = new Map<number, { lap: number; notes: LapNote[]; clips: Clip[] }>();
+    for (const g of notes.feed.data ? noteGroups(notes.feed.data) : []) byLap.set(g.lap, { ...g, clips: [] });
+    for (const [lap, list] of clips) {
+      const g = byLap.get(lap) ?? { lap, notes: [], clips: [] };
+      g.clips = list;
+      byLap.set(lap, g);
+    }
+    return [...byLap.values()].sort((a, b) => b.lap - a.lap);
+  });
   const filtered = $derived.by(() => {
     const q = query.trim().toLowerCase();
     if (!q) return groups;
     const carRe = /^#?\d+$/.test(q) ? new RegExp(`#${q.replace('#', '')}\\b`) : null;
+    const hit = (text: string) => (carRe ? carRe.test(text) : text.toLowerCase().includes(q));
     return groups
-      .map((g) => ({ ...g, notes: g.notes.filter((n) => (carRe ? carRe.test(n.Note) : n.Note.toLowerCase().includes(q))) }))
-      .filter((g) => g.notes.length);
+      .map((g) => ({ ...g, notes: g.notes.filter((n) => hit(n.Note)), clips: g.clips.filter((c) => hit(c.title)) }))
+      .filter((g) => g.notes.length || g.clips.length);
   });
+
+  const mmss = (s: number) => `${Math.floor(s / 60)}:${String(Math.round(s % 60)).padStart(2, '0')}`;
 </script>
 
 <div class="card">
-  {#if notes.feed.data}
+  {#if notes.feed.data || clips.size}
     <div class="toolbar">
       <label class="visually-hidden" for="note-filter">Filter notes</label>
       <input id="note-filter" type="search" placeholder="Filter by car # or keyword" bind:value={query} />
@@ -43,6 +70,19 @@
                   {#if f.tone !== 'green' && f.tone !== 'neutral'}<span class="chip">{f.label}</span>{/if}
                   {n.Note}
                 </p>
+              {/each}
+              {#each g.clips as c (c.id)}
+                <div class="clip">
+                  <button class="watch" aria-expanded={playing === c.id} onclick={() => (playing = playing === c.id ? null : c.id)}>
+                    <span class="play" aria-hidden="true">{playing === c.id ? '■' : '▶'}</span>
+                    <span class="title">{c.title}</span>
+                    {#if c.seconds > 0}<span class="len">{mmss(c.seconds)}</span>{/if}
+                  </button>
+                  {#if playing === c.id}
+                    <!-- svelte-ignore a11y_media_has_caption NASCAR doesn't publish captions for these clips. -->
+                    <video src={c.src} controls autoplay playsinline preload="none"></video>
+                  {/if}
+                </div>
               {/each}
             </div>
           </li>
@@ -110,6 +150,45 @@
   .note.white,
   .note.checkered {
     border-left-color: var(--axis);
+  }
+  .clip {
+    padding-left: 15px;
+  }
+  .watch {
+    display: inline-flex;
+    align-items: baseline;
+    gap: 8px;
+    max-width: 100%;
+    padding: 6px 10px;
+    border-radius: 8px;
+    border: 1px solid var(--border);
+    background: var(--surface-2);
+    color: var(--ink);
+    font-size: 13px;
+    font-weight: 600;
+    text-align: left;
+    cursor: pointer;
+  }
+  .watch:hover {
+    background: var(--surface-3);
+  }
+  .play {
+    color: var(--accent);
+    font-size: 11px;
+  }
+  .len {
+    font-weight: 500;
+    color: var(--muted);
+    font-variant-numeric: tabular-nums;
+  }
+  video {
+    display: block;
+    width: 100%;
+    max-width: 560px;
+    aspect-ratio: 16 / 9;
+    margin-top: 8px;
+    border-radius: 8px;
+    background: #000;
   }
   .chip {
     display: inline-block;

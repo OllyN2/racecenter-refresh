@@ -1,7 +1,8 @@
 <script lang="ts">
+  import type { Snippet } from 'svelte';
   import type { DriverName } from '../lib/format';
 
-  let { driver, sub = '' }: { driver: DriverName; sub?: string } = $props();
+  let { driver, sub = '', badges }: { driver: DriverName; sub?: string; badges?: Snippet } = $props();
 </script>
 
 <span class="driver">
@@ -10,6 +11,7 @@
     {#if driver.chase}<abbr class="tag chase" title="In the Chase">C</abbr>{/if}
     {#if driver.rookie}<abbr class="tag" title="Rookie">R</abbr>{/if}
     {#if driver.ineligible}<abbr class="tag" title="Not eligible for series points">i</abbr>{/if}
+    {@render badges?.()}
   </span>
   {#if sub}<span class="sub">{sub}</span>{/if}
 </span>

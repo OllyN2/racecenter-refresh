@@ -38,11 +38,24 @@ export interface LiveVehicle {
   best_lap_speed: number;
   best_lap: number;
   laps_led: { start_lap: number; end_lap: number }[];
-  pit_stops: { pit_in_elapsed_time: number; pit_in_leader_lap: number }[];
+  pit_stops: {
+    pit_in_elapsed_time: number;
+    pit_out_elapsed_time: number;
+    pit_in_lap_count: number;
+    pit_in_leader_lap: number;
+    positions_gained_lossed: number;
+  }[];
   status: number;
   is_on_track: boolean;
+  is_on_dvp: boolean;
   average_running_position: number;
+  average_restart_speed: number;
+  fastest_laps_run: number;
+  laps_position_improved: number;
+  passes_made: number;
+  times_passed: number;
   passing_differential: number;
+  quality_passes: number;
 }
 
 export interface ScheduleEvent {
@@ -176,6 +189,8 @@ export interface PitStop {
   lap_count: number;
   pit_in_flag_status: number;
   pit_in_race_time: number;
+  in_travel_duration: number;
+  out_travel_duration: number;
   total_duration: number;
   pit_stop_duration: number;
   pit_stop_type: string;
@@ -207,4 +222,22 @@ export interface PointsRow {
   wins: number;
   top_5: number;
   top_10: number;
+}
+
+/** NASCAR's highlight clips for a race (published via SnappyTV). */
+export interface ClipFeed {
+  event: number;
+  tracks: Record<string, ClipItem[]> | null;
+}
+
+export interface ClipItem {
+  type: string;
+  id: number;
+  title: string;
+  tags?: string[];
+  video_duration: number;
+  created_at: number;
+  expired: boolean;
+  status: string;
+  downloads?: { resolution: string; bitrate: string; url: string }[];
 }

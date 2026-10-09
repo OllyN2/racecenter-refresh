@@ -1,6 +1,6 @@
 <script lang="ts">
   import { clockTime, localDateTime, parseDriver, RUN_TYPES, SERIES, sessionLabel, speed } from '../lib/format';
-  import { hasFinalResults, raceStartMs, stageEnds } from '../lib/normalize';
+  import { hasFinalResults, raceStageEnds, raceStartMs } from '../lib/normalize';
   import type { LiveFeed, RaceSummary, WeekendRace } from '../lib/types';
   import CarNumber from './CarNumber.svelte';
   import FlagPill from './FlagPill.svelte';
@@ -20,7 +20,6 @@
 
   const series = $derived(SERIES[race.series_id]);
   const start = $derived(raceStartMs(race));
-  const ends = $derived(stageEnds(race));
   const finished = $derived(hasFinalResults(weekendRace));
   const liveRace = $derived(live?.run_type === 3);
   const winner = $derived(weekendRace?.results.find((r) => r.finishing_position === 1));
@@ -28,6 +27,7 @@
 
   const totalLaps = $derived(liveRace && live ? live.laps_in_race : race.actual_laps || race.scheduled_laps);
   const progressLap = $derived(liveRace && live ? live.lap_number : finished ? totalLaps : 0);
+  const ends = $derived(raceStageEnds(race, totalLaps));
 
   function countdown(ms: number): string {
     const diff = ms - now;
@@ -49,7 +49,8 @@
 <header class="race-header card">
   <div class="eyebrow">
     <span class="series">{series?.name ?? 'NASCAR'}</span>
-    {#if race.playoff_round > 0}<span class="round">Chase · Round {race.playoff_round}</span>{/if}
+    <!-- The Chase has no rounds; the feed just sets playoff_round to 1 for every Chase race. -->
+    {#if race.playoff_round > 0}<span class="round">Chase</span>{/if}
   </div>
   <h1>{race.race_name}</h1>
   <p class="meta">

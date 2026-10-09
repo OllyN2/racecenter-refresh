@@ -139,7 +139,7 @@
           </tbody>
         </table>
       </div>
-      {#if hasChase}<p class="note">The line marks the Chase cutoff; <abbr title="In the Chase">C</abbr> = in the Chase.</p>{/if}
+      {#if hasChase}<p class="note">Drivers above the line are in the Chase (<abbr title="In the Chase">C</abbr>).</p>{/if}
     {:else if pointsFeed.feed.data}
       <p class="empty">Points for this race haven't been published yet.</p>
     {:else}

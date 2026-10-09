@@ -1,27 +1,16 @@
 <script lang="ts">
-  import { feeds } from '../lib/api';
   import { flagInfo, lastName } from '../lib/format';
   import { positionSeries, type PositionSeries } from '../lib/normalize';
-  import { useFeed } from '../lib/poll.svelte';
+  import type { FeedState } from '../lib/poll.svelte';
   import type { LapTimes } from '../lib/types';
   import FeedStatus from './FeedStatus.svelte';
 
-  let {
-    series: seriesId,
-    raceId,
-    isLive,
-    stageEnds,
-  }: { series: number; raceId: number; isLive: boolean; stageEnds: number[] } = $props();
-
-  const lapFeed = useFeed<LapTimes>(
-    () => feeds.lapTimes(seriesId, raceId),
-    () => (isLive ? 30_000 : null),
-  );
+  let { laps, feedState, stageEnds }: { laps: LapTimes | null; feedState: FeedState<LapTimes>; stageEnds: number[] } = $props();
 
   const MAX_PICKS = 3;
   const SLOT_VARS = ['var(--s1)', 'var(--s2)', 'var(--s3)'];
 
-  const model = $derived(lapFeed.feed.data ? positionSeries(lapFeed.feed.data) : null);
+  const model = $derived(laps ? positionSeries(laps) : null);
   const all = $derived(model?.series.filter((s) => s.positions.some((p) => p != null)) ?? []);
   const maxLap = $derived(Math.max(1, model?.maxLap ?? 1));
   const maxPos = $derived(Math.max(2, ...all.flatMap((s) => s.positions.filter((p): p is number => p != null))));
@@ -286,7 +275,7 @@
   {:else if model}
     <p class="empty">Lap-by-lap positions appear once the race starts.</p>
   {:else}
-    <FeedStatus state={lapFeed.feed.state} unavailable="Lap-by-lap positions appear once the race starts." />
+    <FeedStatus state={feedState} unavailable="Lap-by-lap positions appear once the race starts." />
   {/if}
 </div>
 

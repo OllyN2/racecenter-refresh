@@ -1,5 +1,6 @@
 import { gap, parseDriver, parseTimestamp, parseUtc, type DriverName } from './format';
 import type {
+  ClipFeed,
   LapNote,
   LapNotes,
   LapTimes,
@@ -56,8 +57,9 @@ export function isSessionActive(live: LiveFeed, now = Date.now()): boolean {
   return Number.isFinite(t) && now - t < LIVE_STALE_MS && live.flag_state !== FLAG_INACTIVE;
 }
 
+/** Ranges start at lap 0 for whoever led the field to green; only completed laps count as led. */
 export function lapsLedCount(ranges: LiveVehicle['laps_led']): number {
-  return (ranges ?? []).reduce((n, r) => n + Math.max(0, r.end_lap - r.start_lap + 1), 0);
+  return (ranges ?? []).reduce((n, r) => n + Math.max(0, r.end_lap - Math.max(r.start_lap, 1) + 1), 0);
 }
 
 /** The feed repeats pit stop entries; count distinct pit-in times. */
@@ -94,7 +96,8 @@ export function liveRows(live: LiveFeed): LeaderboardRow[] {
       driver: parseDriver(v.driver.full_name),
       make: v.vehicle_manufacturer,
       sponsor: v.sponsor_name,
-      gap: gap(v.delta, i === 0),
+      // Before a car completes a lap the feed reports a 0 delta for everyone.
+      gap: i === 0 ? gap(v.delta, true) : v.laps_completed > 0 ? gap(v.delta, false) : '—',
       lastLap: v.last_lap_time || null,
       bestLap: v.best_lap_time || null,
       bestSpeed: v.best_lap_speed || null,
@@ -163,6 +166,16 @@ export function stageEnds(race: Pick<RaceSummary, 'stage_1_laps' | 'stage_2_laps
   return lens.map((n) => (sum += n));
 }
 
+/**
+ * Stage ends for a race of `totalLaps`. The schedule can disagree with the live feed (Charlotte's 2026 truck race
+ * was listed at 167 laps with a 107-lap final stage but ran 134), so the final stage always ends at `totalLaps`.
+ */
+export function raceStageEnds(race: Parameters<typeof stageEnds>[0], totalLaps: number): number[] {
+  const ends = stageEnds(race);
+  if (!totalLaps) return ends;
+  return [...ends.slice(0, -1).filter((e) => e < totalLaps), totalLaps];
+}
+
 export function raceStartMs(race: RaceSummary): number {
   const ev = race.schedule?.find((e) => e.run_type === 3);
   return parseUtc(ev?.start_time_utc);
@@ -189,6 +202,34 @@ export function noteGroups(notes: LapNotes): LapNoteGroup[] {
     .map(([lap, list]) => ({ lap: Number(lap), notes: list }))
     .filter((g) => Number.isFinite(g.lap) && g.notes.length)
     .sort((a, b) => b.lap - a.lap);
+}
+
+export interface Clip {
+  id: number;
+  title: string;
+  seconds: number;
+  src: string;
+}
+
+/**
+ * Highlight clips keyed by the lap they show (from their "lap N" tag). The feed for an upcoming race is pre-filled
+ * with the previous race's clips, so anything published before this race started is ignored.
+ */
+export function clipsByLap(feed: ClipFeed | undefined, notBefore: number): Map<number, Clip[]> {
+  const out = new Map<number, Clip[]>();
+  for (const c of Object.values(feed?.tracks ?? {}).flat()) {
+    if (c.type !== 'snap' || c.expired || c.status !== 'active' || !(c.created_at >= notBefore)) continue;
+    const lap = Number(c.tags?.map((t) => /^lap (\d+)$/i.exec(t.trim())?.[1]).find(Boolean));
+    const files = (c.downloads ?? []).filter((d) => d.url.endsWith('.mp4') && d.resolution !== '0x0');
+    // "-high" is 720p at ~700 kbps (about 6 MB a minute), the same size as the 270p "-mid" file despite its label;
+    // "-hd" is 1080p at ten times the size.
+    const file = files.find((d) => d.url.endsWith('-high.mp4')) ?? files.sort((a, b) => Number(a.bitrate) - Number(b.bitrate))[0];
+    if (!Number.isInteger(lap) || !file) continue;
+    const list = out.get(lap) ?? [];
+    list.push({ id: c.id, title: c.title, seconds: c.video_duration, src: file.url });
+    out.set(lap, list);
+  }
+  return out;
 }
 
 export interface PositionSeries {

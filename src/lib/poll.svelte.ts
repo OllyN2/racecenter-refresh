@@ -8,7 +8,8 @@ const ONE_SHOT_RETRY_MS = 5_000;
 
 /** Fetches a JSON feed, optionally re-polling every `intervalMs` while the tab is visible. */
 export class Feed<T> {
-  state = $state<FeedState<T>>({ status: 'loading' });
+  // Raw: feeds are replaced wholesale, never mutated, so deep proxies on 100 KB+ payloads would be wasted work.
+  state = $state.raw<FeedState<T>>({ status: 'loading' });
   updatedAt = $state<Date | null>(null);
   /** null = fetch once (retrying only on network errors). */
   intervalMs: number | null;
@@ -40,15 +41,23 @@ export class Feed<T> {
     return () => this.stop();
   }
 
-  /** Changes the poll rate; switching a one-shot feed to polling schedules the next fetch. */
+  /** Changes the poll rate; going from one-shot or slower polling to faster reschedules the next fetch. */
   setInterval(ms: number | null) {
     if (ms === this.intervalMs) return;
-    const wasIdle = this.intervalMs === null;
+    const before = this.intervalMs;
     this.intervalMs = ms;
-    if (this.#running && wasIdle && ms !== null && !document.hidden) {
+    // Speeding up (e.g. a session just went live) must not wait out the slower timer already pending.
+    if (this.#running && ms !== null && (before === null || ms < before) && !document.hidden && !this.#failures) {
       clearTimeout(this.#timer);
       this.#timer = setTimeout(() => void this.#tick(), ms);
     }
+  }
+
+  /** Fetches again now (e.g. to fill gaps), keeping the current data until the response arrives. */
+  refresh() {
+    if (!this.#running || document.hidden) return;
+    clearTimeout(this.#timer);
+    void this.#tick();
   }
 
   stop() {

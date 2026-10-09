@@ -7,6 +7,7 @@ export const feeds = {
   weekend: (year: number, series: number, race: number) => `${BASE}/cacher/${year}/${series}/${race}/weekend-feed.json`,
   lapTimes: (series: number, race: number) => `${BASE}/cacher/live/series_${series}/${race}/lap-times.json`,
   lapNotes: (year: number, series: number, race: number) => `${BASE}/cacher/${year}/${series}/${race}/lap-notes.json`,
+  clips: (year: number, series: number, race: number) => `${BASE}/cacher/${year}/${series}/${race}/snappytv.json`,
   pits: (series: number, race: number) => `${BASE}/cacher/live/series_${series}/${race}/live-pit-data.json`,
   carBadge: (series: number, car: string) => `${BASE}/data/images/carbadges/${series}/${car}.png`,
   points: (series: number, race: number) => `${BASE}/live/feeds/series_${series}/${race}/live_points.json`,

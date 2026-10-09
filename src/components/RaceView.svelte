@@ -1,10 +1,13 @@
 <script lang="ts">
+  import { untrack } from 'svelte';
   import { feeds } from '../lib/api';
   import { sessionLabel } from '../lib/format';
-  import { hasFinalResults, liveRows, resultRows, runRows, stageEnds, type BoardSource } from '../lib/normalize';
+  import { analyzeRace } from '../lib/insights';
+  import { LapHistory } from '../lib/laps.svelte';
+  import { hasFinalResults, liveRows, raceStageEnds, raceStartMs, resultRows, runRows, type BoardSource } from '../lib/normalize';
   import { useFeed } from '../lib/poll.svelte';
   import { href, TABS, type Tab } from '../lib/route.svelte';
-  import type { LiveFeed, RaceSummary, WeekendFeed } from '../lib/types';
+  import type { LapTimes, LiveFeed, PitStop, RaceSummary, WeekendFeed } from '../lib/types';
   import FeedStatus from './FeedStatus.svelte';
   import Leaderboard from './Leaderboard.svelte';
   import LapNotes from './LapNotes.svelte';
@@ -16,9 +19,17 @@
   let {
     race,
     live,
+    snapshot,
     liveUpdatedAt,
     tab,
-  }: { race: RaceSummary; live?: LiveFeed; liveUpdatedAt: Date | null; tab: Tab } = $props();
+  }: {
+    race: RaceSummary;
+    live?: LiveFeed;
+    /** The live feed for this race even after it ends (holds loop data like passes until the next session). */
+    snapshot?: LiveFeed;
+    liveUpdatedAt: Date | null;
+    tab: Tab;
+  } = $props();
 
   const isLive = $derived(!!live);
   const year = $derived(race.race_season);
@@ -28,6 +39,62 @@
     () => (isLive ? 30_000 : null),
   );
   const weekendRace = $derived(weekend.feed.data?.weekend_race[0]);
+
+  const raceLive = $derived(live?.run_type === 3 ? live : undefined);
+  const raceFeed = $derived(raceLive ?? (snapshot?.run_type === 3 ? snapshot : undefined));
+
+  // Lap times and pit data are shared by the leaderboard, Positions and Pit stops tabs. They start loading on
+  // the first visit to a tab that needs them and are kept for the rest of the visit.
+  let wantLaps = $state(false);
+  let wantPits = $state(false);
+  $effect(() => {
+    if (tab === 'leaderboard' || tab === 'chart') wantLaps = true;
+    if (tab === 'leaderboard' || tab === 'pits') wantPits = true;
+  });
+
+  const pitFeed = useFeed<PitStop[]>(
+    () => (wantPits ? feeds.pits(race.series_id, race.race_id) : null),
+    () => (raceLive ? 15_000 : null),
+  );
+
+  // Downloaded once, then extended lap by lap from the live feed (see LapHistory).
+  const lapFeed = useFeed<LapTimes>(
+    () => (wantLaps ? feeds.lapTimes(race.series_id, race.race_id) : null),
+    () => null,
+  );
+  const history = new LapHistory();
+  $effect(() => {
+    const data = lapFeed.feed.data;
+    if (!data) return;
+    untrack(() => {
+      history.load(data);
+      if (raceLive) history.ingest(raceLive);
+    });
+  });
+  $effect(() => {
+    const l = raceLive;
+    if (l) untrack(() => history.ingest(l));
+  });
+  let lastRefill = 0;
+  $effect(() => {
+    void history.data;
+    if (!raceLive || !history.hasGaps || Date.now() - lastRefill < 120_000) return;
+    lastRefill = Date.now();
+    untrack(() => lapFeed.feed.refresh());
+  });
+
+  const insights = $derived(
+    raceLive || hasFinalResults(weekendRace)
+      ? analyzeRace({
+          laps: history.data,
+          pits: pitFeed.feed.data,
+          vehicles: raceFeed?.vehicles,
+          inProgress: !!raceLive && raceLive.flag_state !== 4,
+          flag: raceLive?.flag_state ?? null,
+          results: weekendRace?.results,
+        })
+      : null,
+  );
 
   const sources = $derived.by(() => {
     const out: BoardSource[] = [];
@@ -65,7 +132,7 @@
 <div class="panel">
   {#if tab === 'leaderboard'}
     {#if sources.length}
-      <Leaderboard {sources} series={race.series_id} />
+      <Leaderboard {sources} series={race.series_id} {insights} />
     {:else}
       <div class="card">
         <FeedStatus state={weekend.feed.state} unavailable="The entry list hasn't been published yet." />
@@ -73,11 +140,11 @@
       </div>
     {/if}
   {:else if tab === 'notes'}
-    <LapNotes {year} series={race.series_id} raceId={race.race_id} {isLive} />
+    <LapNotes {year} series={race.series_id} raceId={race.race_id} {isLive} startMs={raceStartMs(race)} />
   {:else if tab === 'pits'}
-    <PitStops series={race.series_id} raceId={race.race_id} {isLive} />
+    <PitStops series={race.series_id} feedState={pitFeed.feed.state} />
   {:else if tab === 'chart'}
-    <PositionChart series={race.series_id} raceId={race.race_id} {isLive} stageEnds={stageEnds(race)} />
+    <PositionChart laps={history.data} feedState={lapFeed.feed.state} stageEnds={raceStageEnds(race, raceLive?.laps_in_race ?? (race.actual_laps || race.scheduled_laps))} />
   {:else if tab === 'stages'}
     <StagesPoints series={race.series_id} raceId={race.race_id} {isLive} {weekendRace} />
   {/if}

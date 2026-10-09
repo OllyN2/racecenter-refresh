@@ -7,6 +7,7 @@ const CSP = [
   "style-src 'self' 'unsafe-inline'",
   "img-src 'self' data: https://cf.nascar.com",
   'connect-src https://cf.nascar.com',
+  'media-src https://downforce.nascar.com',
   "base-uri 'none'",
   "form-action 'none'",
   "object-src 'none'",
