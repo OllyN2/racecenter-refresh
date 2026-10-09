@@ -26,6 +26,8 @@
   --down-text: #b42525;
   --green-wash: rgba(12, 163, 12, 0.14);
   --caution-wash: rgba(250, 178, 25, 0.16);
+  --chase-wash: rgba(250, 204, 21, 0.16);
+  --chase-wash-strong: rgba(250, 204, 21, 0.28);
   --flash-up: rgba(12, 163, 12, 0.12);
   --flash-down: rgba(208, 59, 59, 0.1);
 
@@ -57,6 +59,8 @@
     --up-text: #0ca30c;
     --down-text: #ef6b6b;
     --caution-wash: rgba(250, 178, 25, 0.12);
+    --chase-wash: rgba(250, 204, 21, 0.1);
+    --chase-wash-strong: rgba(250, 204, 21, 0.18);
     --flash-up: rgba(12, 163, 12, 0.18);
     --flash-down: rgba(208, 59, 59, 0.18);
   }
@@ -84,6 +88,8 @@
   --up-text: #0ca30c;
   --down-text: #ef6b6b;
   --caution-wash: rgba(250, 178, 25, 0.12);
+  --chase-wash: rgba(250, 204, 21, 0.1);
+  --chase-wash-strong: rgba(250, 204, 21, 0.18);
   --flash-up: rgba(12, 163, 12, 0.18);
   --flash-down: rgba(208, 59, 59, 0.18);
 }

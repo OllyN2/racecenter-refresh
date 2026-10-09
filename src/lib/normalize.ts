@@ -96,7 +96,8 @@ export function liveRows(live: LiveFeed): LeaderboardRow[] {
       start: v.starting_position || null,
       car: v.vehicle_number,
       driverId: v.driver.driver_id,
-      driver: parseDriver(v.driver.full_name),
+      // The "(C)" suffix also marks drivers who aren't in this series' Chase; is_in_chase is the real flag.
+      driver: { ...parseDriver(v.driver.full_name), chase: !!v.driver.is_in_chase },
       make: v.vehicle_manufacturer,
       sponsor: v.sponsor_name,
       // Before a car completes a lap the feed reports a 0 delta for everyone.
@@ -184,7 +185,7 @@ export function resultRows(race: WeekendRace): LeaderboardRow[] {
         start: r.starting_position || null,
         car: r.car_number,
         driverId: r.driver_id,
-        driver: parseDriver(r.driver_fullname),
+        driver: { ...parseDriver(r.driver_fullname), chase: false },
         make: r.car_make,
         sponsor: r.sponsor,
         team: r.team_name,
@@ -206,7 +207,7 @@ export function runRows(run: WeekendRun): LeaderboardRow[] {
       pos: r.finishing_position || null,
       car: r.car_number,
       driverId: r.driver_id,
-      driver: parseDriver(r.driver_name),
+      driver: { ...parseDriver(r.driver_name), chase: false },
       make: r.manufacturer,
       gap: i === 0 ? 'Fastest' : r.best_lap_time > 0 ? `+${Math.abs(r.delta_leader).toFixed(3)}` : '—',
       bestLap: r.best_lap_time || null,

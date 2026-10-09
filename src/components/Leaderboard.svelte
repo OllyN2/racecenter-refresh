@@ -17,11 +17,24 @@
     series,
     raceId,
     insights = null,
-  }: { sources: BoardSource[]; series: number; raceId: number; insights?: RaceInsights | null } = $props();
+    chaseIds,
+  }: {
+    sources: BoardSource[];
+    series: number;
+    raceId: number;
+    insights?: RaceInsights | null;
+    /** Chase drivers from the race's points file, for result rows (live rows carry the flag themselves). */
+    chaseIds?: Set<number>;
+  } = $props();
 
   let picked = $state<string | null>(null);
   const active = $derived(sources.find((s) => s.id === picked) ?? sources[0]);
   const mode = $derived(active?.mode);
+  const rows = $derived(
+    (active?.rows ?? []).map((r) =>
+      !r.driver.chase && chaseIds?.has(r.driverId) ? { ...r, driver: { ...r.driver, chase: true } } : r,
+    ),
+  );
 
   let flash = $state<Record<string, 'up' | 'down'>>({});
   let prevPos = new Map<string, number>();
@@ -136,7 +149,7 @@
           </tr>
         </thead>
         <tbody>
-          {#each active.rows as r (r.key)}
+          {#each rows as r (r.key)}
             {@const d = moved(r)}
             {@const ins = analysis?.cars.get(r.car)}
             {@const expandable = canOpen(ins)}
@@ -150,6 +163,7 @@
               class={flash[r.key] ? `flash-${flash[r.key]}` : ''}
               class:expandable
               class:open={expandable && open === r.car}
+              class:chase={r.driver.chase}
               onclick={() => expandable && (open = open === r.car ? null : r.car)}
             >
               {#if mode !== 'entry'}<td class="r pos">{r.pos ?? '—'}</td>{/if}
@@ -216,6 +230,9 @@
         </tbody>
       </table>
     </div>
+    {#if rows.some((r) => r.driver.chase)}
+      <p class="key"><span class="swatch" aria-hidden="true"></span>Drivers in the Chase</p>
+    {/if}
   {/if}
 </div>
 
@@ -314,6 +331,29 @@
   }
   .detail-row td {
     background: var(--surface-2);
+  }
+  /* After the open-row rule so a Chase driver's row stays yellow while its details are showing. */
+  tr.chase td {
+    background: var(--chase-wash);
+  }
+  tr.chase:hover td {
+    background: var(--chase-wash-strong);
+  }
+  .key {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    margin: 0;
+    padding: 10px 12px 12px;
+    font-size: 12px;
+    color: var(--muted);
+    border-top: 1px solid var(--grid);
+  }
+  .swatch {
+    width: 14px;
+    height: 10px;
+    border-radius: 2px;
+    background: var(--chase-wash-strong);
   }
   table.data tbody tr.detail-row:hover td {
     background: var(--surface-2);

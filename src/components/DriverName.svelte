@@ -8,7 +8,7 @@
 <span class="driver">
   <span class="name">
     {driver.name}
-    {#if driver.chase}<abbr class="tag chase" title="In the Chase">C</abbr>{/if}
+    {#if driver.chase}<span class="visually-hidden">(in the Chase)</span>{/if}
     {#if driver.rookie}<abbr class="tag" title="Rookie">R</abbr>{/if}
     {#if driver.ineligible}<abbr class="tag" title="Not eligible for series points">i</abbr>{/if}
     {@render badges?.()}
@@ -45,10 +45,6 @@
     background: var(--surface-3);
     color: var(--ink-2);
     cursor: help;
-  }
-  .chase {
-    background: var(--accent-wash);
-    color: var(--accent);
   }
   @media (max-width: 640px) {
     .sub {

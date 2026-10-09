@@ -8,6 +8,7 @@
     cautionsFromFlags,
     hasFinalResults,
     liveRows,
+    pointsMatchEntries,
     raceStageEnds,
     raceStartMs,
     resultRows,
@@ -16,7 +17,7 @@
   } from '../lib/normalize';
   import { useFeed } from '../lib/poll.svelte';
   import { href, TABS, type Tab } from '../lib/route.svelte';
-  import type { LapTimes, LiveFeed, LiveFlag, PitStop, RaceSummary, WeekendFeed } from '../lib/types';
+  import type { LapTimes, LiveFeed, LiveFlag, PitStop, PointsRow, RaceSummary, WeekendFeed } from '../lib/types';
   import FeedStatus from './FeedStatus.svelte';
   import Leaderboard from './Leaderboard.svelte';
   import LapNotes from './LapNotes.svelte';
@@ -64,6 +65,24 @@
   const cautions = $derived(
     weekendCautions.length ? weekendCautions : cautionsFromFlags(flagFeed.feed.data ?? [], raceLive?.lap_number ?? 0),
   );
+
+  // This race's driver points: the Stages tab's standings, and who's in the Chase for finished races (results
+  // don't say; live rows get it from the live feed, so a running race's leaderboard doesn't need this file).
+  let wantPoints = $state(false);
+  $effect(() => {
+    if (tab === 'stages' || (tab === 'leaderboard' && !raceLive && hasFinalResults(weekendRace))) wantPoints = true;
+  });
+  const pointsFeed = useFeed<PointsRow[]>(
+    () => (wantPoints ? feeds.points(race.series_id, race.race_id) : null),
+    () => (raceLive && tab === 'stages' ? 30_000 : null),
+  );
+  // Before a race the per-race file can still hold another series' standings; only trust it if it matches.
+  const points = $derived.by(() => {
+    const rows = pointsFeed.feed.data;
+    const entered = new Set(weekendRace?.results.map((r) => r.driver_id) ?? []);
+    return rows && pointsMatchEntries(rows, entered) ? rows : null;
+  });
+  const chaseIds = $derived(new Set((points ?? []).filter((p) => p.is_in_chase).map((p) => p.driver_id)));
 
   // Lap times and pit data are shared by the leaderboard, Positions and Pit stops tabs. They start loading on
   // the first visit to a tab that needs them and are kept for the rest of the visit.
@@ -154,7 +173,7 @@
 <div class="panel">
   {#if tab === 'leaderboard'}
     {#if sources.length}
-      <Leaderboard {sources} series={race.series_id} raceId={race.race_id} {insights} />
+      <Leaderboard {sources} series={race.series_id} raceId={race.race_id} {insights} {chaseIds} />
     {:else}
       <div class="card">
         <FeedStatus state={weekend.feed.state} unavailable="The entry list hasn't been published yet." />
@@ -182,6 +201,8 @@
       {weekendRace}
       vehicles={raceFeed?.vehicles}
       {cautions}
+      {points}
+      pointsState={pointsFeed.feed.state}
     />
   {/if}
 </div>

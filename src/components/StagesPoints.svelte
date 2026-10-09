@@ -1,8 +1,8 @@
 <script lang="ts">
   import { feeds } from '../lib/api';
   import { parseDriver } from '../lib/format';
-  import { leadersFromLive, pointsMatchEntries, stagesFromLive } from '../lib/normalize';
-  import { useFeed } from '../lib/poll.svelte';
+  import { leadersFromLive, stagesFromLive } from '../lib/normalize';
+  import { useFeed, type FeedState } from '../lib/poll.svelte';
   import type { LiveStage, LiveVehicle, PointsRow, WeekendRace } from '../lib/types';
   import CarNumber from './CarNumber.svelte';
   import DriverName from './DriverName.svelte';
@@ -16,6 +16,8 @@
     vehicles,
     year,
     cautions,
+    points: allPoints,
+    pointsState,
   }: {
     series: number;
     raceId: number;
@@ -25,6 +27,9 @@
     year: number;
     /** From the weekend feed after the race, live-flag-data during it (see RaceView). */
     cautions: WeekendRace['caution_segments'];
+    /** This race's points, already checked against the entry list (see RaceView). */
+    points: PointsRow[] | null;
+    pointsState: FeedState<PointsRow[]>;
   } = $props();
 
   // The weekend feed only fills in stage results after the race; live-stage-points has them live.
@@ -33,19 +38,10 @@
     () => (isLive ? 30_000 : null),
   );
 
-  const pointsFeed = useFeed<PointsRow[]>(
-    () => feeds.points(series, raceId),
-    () => (isLive ? 30_000 : null),
-  );
-
-  const entryIds = $derived(new Set(weekendRace?.results.map((r) => r.driver_id) ?? []));
-  const points = $derived.by(() => {
-    const rows = pointsFeed.feed.data;
-    if (!rows || !pointsMatchEntries(rows, entryIds)) return null;
+  const points = $derived(
     // The truck file lists drivers with no number and no points, several sharing driver_id 0; they add nothing.
-    return rows.filter((p) => p.points > 0 || p.car_number).sort((a, b) => a.points_position - b.points_position);
-  });
-  const chaseCut = $derived(points ? points.findIndex((p) => !p.is_in_chase) : -1);
+    allPoints?.filter((p) => p.points > 0 || p.car_number).sort((a, b) => a.points_position - b.points_position) ?? null,
+  );
   const hasChase = $derived(!!points?.some((p) => p.is_in_chase));
 
   const nameByCar = $derived(new Map(weekendRace?.results.map((r) => [r.car_number, parseDriver(r.driver_fullname).name]) ?? []));
@@ -142,8 +138,8 @@
             </tr>
           </thead>
           <tbody>
-            {#each points as p, i (`${p.driver_id}-${p.points_position}`)}
-              <tr class:cut={hasChase && i === chaseCut}>
+            {#each points as p (`${p.driver_id}-${p.points_position}`)}
+              <tr class:chase={p.is_in_chase}>
                 <td class="r pos">{p.points_position}</td>
                 <td class="car"><CarNumber {series} number={p.car_number} /></td>
                 <td><DriverName driver={{ ...parseDriver(`${p.first_name} ${p.last_name}`), chase: p.is_in_chase, rookie: p.is_rookie }} /></td>
@@ -158,11 +154,11 @@
           </tbody>
         </table>
       </div>
-      {#if hasChase}<p class="note">Drivers above the line are in the Chase (<abbr title="In the Chase">C</abbr>).</p>{/if}
-    {:else if pointsFeed.feed.data}
+      {#if hasChase}<p class="note"><span class="swatch" aria-hidden="true"></span>Drivers in the Chase</p>{/if}
+    {:else if pointsState.status === 'ok'}
       <p class="empty">Points for this race haven't been published yet.</p>
     {:else}
-      <FeedStatus state={pointsFeed.feed.state} unavailable="Points for this race haven't been published yet." />
+      <FeedStatus state={pointsState} unavailable="Points for this race haven't been published yet." />
     {/if}
   </section>
 </div>
@@ -249,17 +245,26 @@
   .strong {
     font-weight: 700;
   }
-  tr.cut td {
-    border-top: 2px solid var(--accent);
+  tr.chase td {
+    background: var(--chase-wash);
+  }
+  tr.chase:hover td {
+    background: var(--chase-wash-strong);
+  }
+  .swatch {
+    display: inline-block;
+    width: 14px;
+    height: 10px;
+    margin-right: 6px;
+    vertical-align: -1px;
+    border-radius: 2px;
+    background: var(--chase-wash-strong);
   }
   .note {
     margin: 0;
     padding: 10px 14px 14px;
     font-size: 12px;
     color: var(--muted);
-  }
-  .note abbr {
-    text-decoration: none;
   }
   @media (max-width: 860px) {
     .layout {
