@@ -108,6 +108,8 @@ export function liveRows(live: LiveFeed): LeaderboardRow[] {
       laps: v.laps_completed,
       lapsLed: lapsLedCount(v.laps_led),
       pits: pitCount(v.pit_stops),
+      // Status 1 is running; anything else means the car is out (e.g. 6 after a crash).
+      status: v.status === 1 ? '' : 'Out',
       onTrack: v.is_on_track,
     }));
 }

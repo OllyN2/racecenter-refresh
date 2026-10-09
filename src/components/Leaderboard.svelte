@@ -155,6 +155,7 @@
             {@const expandable = canOpen(ins)}
             {#snippet badges()}
               {#if ins?.onPitRoad}<span class="badge pit" title="On pit road">Pit</span>
+              {:else if active?.live && r.status === 'Out'}<span class="badge" title="Out of the race">Out</span>
               {:else if active?.live && r.onTrack === false && (r.laps ?? 0) > 0}<span class="badge" title="Not on track">Off</span>{/if}
               {#if ins?.dvp}<span class="badge dvp" title="Under the damaged vehicle policy clock">DVP</span>{/if}
             {/snippet}

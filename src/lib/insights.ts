@@ -236,10 +236,6 @@ export function analyzeRace(input: RaceInput): RaceInsights {
     }
 
     const name = v?.driver.full_name ?? lapCar?.FullName ?? '';
-    const lastStop = v?.pit_stops?.reduce<LiveVehicle['pit_stops'][number] | null>(
-      (latest, s) => (s.pit_in_elapsed_time > (latest?.pit_in_elapsed_time ?? 0) ? s : latest),
-      null,
-    );
     cars.set(num, {
       car: num,
       name,
@@ -252,7 +248,9 @@ export function analyzeRace(input: RaceInput): RaceInsights {
       stints: runs,
       longRun: long.length >= 10 ? mean(long.map((s) => s.time)) : null,
       restarts: gains,
-      onPitRoad: inProgress && !!lastStop && lastStop.pit_in_elapsed_time > 0 && !(lastStop.pit_out_elapsed_time > 0),
+      // A running car that isn't on track is on pit road (checked against the 2026-10-09 Charlotte pit cycles).
+      // The pit_stops list only gains an entry once the car has left pit road, so it can't tell.
+      onPitRoad: inProgress && !!v && v.status === 1 && v.laps_completed > 0 && !v.is_on_track,
       dvp: inProgress && !!v?.is_on_dvp,
       stats: v && v.laps_completed > 0 ? v : null,
       passesKnown,
