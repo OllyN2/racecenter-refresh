@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { clockTime, localDateTime, parseDriver, RUN_TYPES, SERIES, sessionLabel, speed } from '../lib/format';
+  import { clockTime, localDateTime, parseDriver, parseTimestamp, RUN_TYPES, SERIES, sessionLabel, speed } from '../lib/format';
   import { hasFinalResults, raceStageEnds, raceStartMs } from '../lib/normalize';
   import type { LiveFeed, RaceSummary, WeekendRace } from '../lib/types';
   import CarNumber from './CarNumber.svelte';
@@ -32,6 +32,12 @@
   const liveRace = $derived(live?.run_type === 3);
   const winner = $derived(weekendRace?.results.find((r) => r.finishing_position === 1));
   const summary = $derived(weekendRace ?? race);
+
+  // NASCAR's own timestamp on the data, not when we last checked: the feed only changes about every 30 s.
+  const dataTime = $derived.by(() => {
+    const t = live ? parseTimestamp(live.time_of_day_os) : NaN;
+    return Number.isFinite(t) ? new Date(t) : updatedAt;
+  });
 
   const totalLaps = $derived(liveRace && live ? live.laps_in_race : race.actual_laps || race.scheduled_laps);
   const progressLap = $derived(liveRace && live ? live.lap_number : finished ? totalLaps : 0);
@@ -73,7 +79,9 @@
       <span class="session">{sessionLabel(live.run_name) || RUN_TYPES[live.run_type]}</span>
       {#if liveRace}<RadioButton series={race.series_id} />{/if}
       <span class="live-dot" aria-hidden="true"></span>
-      <span class="updated">Live · updated {clockTime(updatedAt)}</span>
+      <span class="updated" title="Time on NASCAR's timing data (it publishes about every 30 seconds; checked every 5)">
+        Live · updated {clockTime(dataTime)}
+      </span>
     {:else if finished}
       <FlagPill tone="checkered" label="Final" />
       {#if summary.total_race_time}<span class="session">Race time {summary.total_race_time}</span>{/if}

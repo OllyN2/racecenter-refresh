@@ -9,6 +9,12 @@ All `cf.nascar.com` and `ai.nascar.com` feeds send `Access-Control-Allow-Origin:
 don't exist yet return **403** from S3. During a race most live feeds change about every **30 s**, even though
 live-ops says to refresh every 5 s.
 
+Measured during the Charlotte truck race (polling every 2 s for 150 s): every copy of the live feed changed every
+30–40 s, and its `time_of_day_os` was already ~17 s old when it appeared. Lap times and live points changed every
+~40 s, the raw feed every ~60 s, and stage points when a stage ended. Pit data, flags, lap notes and clips changed
+only when something happened. The site polls the live feed every 5 s (mostly cheap 304s), so it shows each update
+within ~5 s of NASCAR publishing it, and the header shows the data's own timestamp.
+
 **Used** marks what this site reads today: *panel* = only when a driver's details are open, *live* = only during a race, *build* = split into `public/tracks/` by `npm run tracks`.
 
 ## Live race
