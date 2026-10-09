@@ -6,6 +6,7 @@
   import type { LiveStage, LiveVehicle, PointsRow, WeekendRace } from '../lib/types';
   import CarNumber from './CarNumber.svelte';
   import DriverName from './DriverName.svelte';
+  import FastestLapBadge from './FastestLapBadge.svelte';
   import FeedStatus from './FeedStatus.svelte';
 
   let {
@@ -142,7 +143,15 @@
               <tr class:chase={p.is_in_chase}>
                 <td class="r pos">{p.points_position}</td>
                 <td class="car"><CarNumber {series} number={p.car_number} /></td>
-                <td><DriverName driver={{ ...parseDriver(`${p.first_name} ${p.last_name}`), chase: p.is_in_chase, rookie: p.is_rookie }} /></td>
+                {#snippet fastest()}
+                  {#if p.is_fastest_lap_point}<FastestLapBadge eligible={p.is_points_eligible} />{/if}
+                {/snippet}
+                <td>
+                  <DriverName
+                    driver={{ ...parseDriver(`${p.first_name} ${p.last_name}`), chase: p.is_in_chase, rookie: p.is_rookie }}
+                    badges={fastest}
+                  />
+                </td>
                 <td class="r strong">{p.points}</td>
                 <td class="r">{p.delta_leader ? p.delta_leader : '—'}</td>
                 <td class="r wide">{p.points_earned_this_race || '–'}</td>
@@ -154,7 +163,12 @@
           </tbody>
         </table>
       </div>
-      {#if hasChase}<p class="note"><span class="swatch" aria-hidden="true"></span>Drivers in the Chase</p>{/if}
+      {#if hasChase || points.some((p) => p.is_fastest_lap_point)}
+        <p class="note">
+          {#if hasChase}<span class="item"><span class="swatch" aria-hidden="true"></span>Drivers in the Chase</span>{/if}
+          {#if points.some((p) => p.is_fastest_lap_point)}<span class="item"><FastestLapBadge sample /> Fastest lap (bonus point)</span>{/if}
+        </p>
+      {/if}
     {:else if pointsState.status === 'ok'}
       <p class="empty">Points for this race haven't been published yet.</p>
     {:else}
@@ -251,6 +265,10 @@
   tr.chase:hover td {
     background: var(--chase-wash-strong);
   }
+  .note .item {
+    display: inline-flex;
+    align-items: center;
+  }
   .swatch {
     display: inline-block;
     width: 14px;
@@ -261,6 +279,10 @@
     background: var(--chase-wash-strong);
   }
   .note {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 6px 18px;
     margin: 0;
     padding: 10px 14px 14px;
     font-size: 12px;

@@ -92,6 +92,26 @@
   });
   const chaseIds = $derived(new Set((points ?? []).filter((p) => p.is_in_chase).map((p) => p.driver_id)));
 
+  // The race's fastest lap earns a bonus point. While running: the quickest best lap in the live feed (already
+  // polled; matched NASCAR's own flag all night at Charlotte). Afterwards: that flag, from the race's points file.
+  const fastestLap = $derived.by(() => {
+    if (raceLive) {
+      const v = raceLive.vehicles.filter((x) => x.best_lap_time > 0).sort((a, b) => a.best_lap_time - b.best_lap_time)[0];
+      return v ? { car: v.vehicle_number, time: v.best_lap_time, lap: v.best_lap || null } : null;
+    }
+    const p = points?.find((x) => x.is_fastest_lap_point);
+    if (!p) return null;
+    const v = raceFeed?.vehicles.find((x) => x.vehicle_number === p.car_number);
+    if (v?.best_lap_time) return { car: p.car_number, time: v.best_lap_time, lap: v.best_lap || null };
+    const best = history.data?.laps
+      .find((c) => c.Number === p.car_number)
+      ?.Laps.reduce<{ Lap: number; LapTime: number } | null>(
+        (m, l) => (l.LapTime && l.LapTime > 0 && (!m || l.LapTime < m.LapTime) ? { Lap: l.Lap, LapTime: l.LapTime } : m),
+        null,
+      );
+    return { car: p.car_number, time: best?.LapTime ?? null, lap: best?.Lap ?? null };
+  });
+
   // Lap times and pit data are shared by the leaderboard, Positions and Pit stops tabs. They start loading on
   // the first visit to a tab that needs them and are kept for the rest of the visit.
   let wantLaps = $state(false);
@@ -181,7 +201,7 @@
 <div class="panel">
   {#if tab === 'leaderboard'}
     {#if sources.length}
-      <Leaderboard {sources} series={race.series_id} raceId={race.race_id} {insights} {chaseIds} />
+      <Leaderboard {sources} series={race.series_id} raceId={race.race_id} {insights} {chaseIds} {fastestLap} />
     {:else}
       <div class="card">
         <FeedStatus state={weekend.feed.state} unavailable="The entry list hasn't been published yet." />

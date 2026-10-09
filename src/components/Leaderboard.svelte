@@ -9,6 +9,7 @@
   import CarNumber from './CarNumber.svelte';
   import DriverDetail from './DriverDetail.svelte';
   import DriverName from './DriverName.svelte';
+  import FastestLapBadge from './FastestLapBadge.svelte';
   import Insights from './Insights.svelte';
   import MakeBadge from './MakeBadge.svelte';
 
@@ -18,6 +19,7 @@
     raceId,
     insights = null,
     chaseIds,
+    fastestLap = null,
   }: {
     sources: BoardSource[];
     series: number;
@@ -25,6 +27,8 @@
     insights?: RaceInsights | null;
     /** Chase drivers from the race's points file, for result rows (live rows carry the flag themselves). */
     chaseIds?: Set<number>;
+    /** Holder of the race's fastest lap, which earns a bonus point. */
+    fastestLap?: { car: string; time: number | null; lap: number | null } | null;
   } = $props();
 
   let picked = $state<string | null>(null);
@@ -35,6 +39,8 @@
       !r.driver.chase && chaseIds?.has(r.driverId) ? { ...r, driver: { ...r.driver, chase: true } } : r,
     ),
   );
+  // Only the race itself has a fastest-lap bonus; practice and qualifying sessions don't.
+  const fastestCar = $derived(fastestLap && (mode === 'race' || mode === 'final') ? fastestLap.car : null);
 
   let flash = $state<Record<string, 'up' | 'down'>>({});
   let prevPos = new Map<string, number>();
@@ -158,6 +164,9 @@
               {:else if active?.live && r.status === 'Out'}<span class="badge" title="Out of the race">Out</span>
               {:else if active?.live && r.onTrack === false && (r.laps ?? 0) > 0}<span class="badge" title="Not on track">Off</span>{/if}
               {#if ins?.dvp}<span class="badge dvp" title="Under the damaged vehicle policy clock">DVP</span>{/if}
+              {#if fastestLap && r.car === fastestCar}
+                <FastestLapBadge time={fastestLap.time} lap={fastestLap.lap} eligible={!r.driver.ineligible} />
+              {/if}
             {/snippet}
             <tr
               id="row-{r.car}"
@@ -231,8 +240,13 @@
         </tbody>
       </table>
     </div>
-    {#if rows.some((r) => r.driver.chase)}
-      <p class="key"><span class="swatch" aria-hidden="true"></span>Drivers in the Chase</p>
+    {@const showChase = rows.some((r) => r.driver.chase)}
+    {@const showFastest = !!fastestCar && rows.some((r) => r.car === fastestCar)}
+    {#if showChase || showFastest}
+      <p class="key">
+        {#if showChase}<span class="item"><span class="swatch" aria-hidden="true"></span>Drivers in the Chase</span>{/if}
+        {#if showFastest}<span class="item"><FastestLapBadge sample /> Fastest lap (bonus point)</span>{/if}
+      </p>
     {/if}
   {/if}
 </div>
@@ -342,13 +356,19 @@
   }
   .key {
     display: flex;
+    flex-wrap: wrap;
     align-items: center;
-    gap: 6px;
+    gap: 6px 18px;
     margin: 0;
     padding: 10px 12px 12px;
     font-size: 12px;
     color: var(--muted);
     border-top: 1px solid var(--grid);
+  }
+  .key .item {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
   }
   .swatch {
     width: 14px;
@@ -390,6 +410,10 @@
     table.data th {
       padding-left: 6px;
       padding-right: 6px;
+    }
+    /* Let badges (fastest lap, pit, DVP) drop under the name rather than widen the table. */
+    table.data td.driver-cell {
+      white-space: normal;
     }
   }
 </style>

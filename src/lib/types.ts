@@ -217,6 +217,8 @@ export interface PointsRow {
   is_in_chase: boolean;
   is_points_eligible: boolean;
   is_rookie: boolean;
+  /** NASCAR's own flag for who holds the race's fastest-lap bonus point. */
+  is_fastest_lap_point: boolean;
   points_earned_this_race: number;
   stage_1_points: number;
   stage_2_points: number;

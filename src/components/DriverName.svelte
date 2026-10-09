@@ -25,8 +25,9 @@
   .name {
     font-weight: 600;
     display: inline-flex;
+    flex-wrap: wrap;
     align-items: center;
-    gap: 5px;
+    gap: 2px 5px;
   }
   .sub {
     font-size: 12px;
