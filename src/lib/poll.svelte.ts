@@ -112,7 +112,10 @@ export class Feed<T> {
  * stopped when the component unmounts. Call during component initialisation.
  */
 export function useFeed<T>(url: () => string | null, interval: () => number | null): { readonly feed: Feed<T> } {
-  const feed = $derived(new Feed<T>(url(), null));
+  // A derived string only notifies when its value changes, so the feed isn't rebuilt (and refetched) just
+  // because something url() reads was replaced with an equal value.
+  const href = $derived(url());
+  const feed = $derived(new Feed<T>(href, null));
   $effect(() => {
     feed.setInterval(interval());
   });

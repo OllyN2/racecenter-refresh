@@ -4,10 +4,19 @@
   import { sessionLabel } from '../lib/format';
   import { analyzeRace } from '../lib/insights';
   import { LapHistory } from '../lib/laps.svelte';
-  import { hasFinalResults, liveRows, raceStageEnds, raceStartMs, resultRows, runRows, type BoardSource } from '../lib/normalize';
+  import {
+    cautionsFromFlags,
+    hasFinalResults,
+    liveRows,
+    raceStageEnds,
+    raceStartMs,
+    resultRows,
+    runRows,
+    type BoardSource,
+  } from '../lib/normalize';
   import { useFeed } from '../lib/poll.svelte';
   import { href, TABS, type Tab } from '../lib/route.svelte';
-  import type { LapTimes, LiveFeed, PitStop, RaceSummary, WeekendFeed } from '../lib/types';
+  import type { LapTimes, LiveFeed, LiveFlag, PitStop, RaceSummary, WeekendFeed } from '../lib/types';
   import FeedStatus from './FeedStatus.svelte';
   import Leaderboard from './Leaderboard.svelte';
   import LapNotes from './LapNotes.svelte';
@@ -43,6 +52,18 @@
 
   const raceLive = $derived(live?.run_type === 3 ? live : undefined);
   const raceFeed = $derived(raceLive ?? (snapshot?.run_type === 3 ? snapshot : undefined));
+
+  // Cautions for the header's lap bar and the Stages tab. The weekend feed only lists them after the race, so
+  // until it does they come from live-flag-data (<1 KB).
+  const weekendCautions = $derived(weekendRace?.caution_segments ?? []);
+  const flagFeed = useFeed<LiveFlag[]>(
+    () =>
+      raceLive || (hasFinalResults(weekendRace) && !weekendCautions.length) ? feeds.flags(race.series_id, race.race_id) : null,
+    () => (raceLive ? 15_000 : null),
+  );
+  const cautions = $derived(
+    weekendCautions.length ? weekendCautions : cautionsFromFlags(flagFeed.feed.data ?? [], raceLive?.lap_number ?? 0),
+  );
 
   // Lap times and pit data are shared by the leaderboard, Positions and Pit stops tabs. They start loading on
   // the first visit to a tab that needs them and are kept for the rest of the visit.
@@ -122,7 +143,7 @@
   });
 </script>
 
-<RaceHeader {race} {weekendRace} {live} updatedAt={liveUpdatedAt} />
+<RaceHeader {race} {weekendRace} {live} {cautions} updatedAt={liveUpdatedAt} />
 
 <nav class="tabs" aria-label="Race views">
   {#each TABS.filter((t) => t.id !== 'track' || raceLive || tab === 'track') as t (t.id)}
@@ -160,7 +181,7 @@
       {isLive}
       {weekendRace}
       vehicles={raceFeed?.vehicles}
-      currentLap={raceLive?.lap_number ?? 0}
+      {cautions}
     />
   {/if}
 </div>

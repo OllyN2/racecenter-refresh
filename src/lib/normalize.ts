@@ -130,20 +130,26 @@ export function stagesFromLive(stages: LiveStage[]): WeekendRace['stage_results'
   }));
 }
 
-/** Caution segments from live-flag-data: each yellow/red until the next green (or now, if still out). */
+const isCautionFlag = (f: LiveFlag | undefined) => f?.flag_state === 2 || f?.flag_state === 3;
+
+/** Caution segments from live-flag-data: each yellow/red until the next other flag (or now, if still out). */
 export function cautionsFromFlags(flags: LiveFlag[], currentLap: number): WeekendRace['caution_segments'] {
   const out: WeekendRace['caution_segments'] = [];
   for (let i = 0; i < flags.length; i++) {
     const f = flags[i];
-    if (f.flag_state !== 2 && f.flag_state !== 3) continue;
-    if (i > 0 && (flags[i - 1].flag_state === 2 || flags[i - 1].flag_state === 3)) continue; // red within a caution
-    const green = flags.slice(i + 1).find((g) => g.flag_state === 1);
+    if (!isCautionFlag(f) || isCautionFlag(flags[i - 1])) continue; // a red inside a caution is the same segment
+    const endIdx = flags.findIndex((g, j) => j > i && !isCautionFlag(g));
+    const end = endIdx >= 0 ? flags[endIdx] : undefined;
     out.push({
       start_lap: f.lap_number + 1,
-      end_lap: green ? green.lap_number : currentLap,
-      reason: f.comment ?? '',
+      end_lap: end ? end.lap_number : Math.max(currentLap, f.lap_number + 1),
+      reason: f.comment?.trim() ?? '',
       comment: '',
-      beneficiary_car_number: flags.slice(i, green ? flags.indexOf(green) : undefined).find((g) => g.beneficiary)?.beneficiary ?? null,
+      beneficiary_car_number:
+        flags
+          .slice(i, endIdx >= 0 ? endIdx : undefined)
+          .map((g) => g.beneficiary?.trim())
+          .find(Boolean) ?? null,
       flag_state: f.flag_state,
     });
   }

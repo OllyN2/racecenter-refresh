@@ -10,8 +10,15 @@
     race,
     weekendRace,
     live,
+    cautions,
     updatedAt,
-  }: { race: RaceSummary; weekendRace?: WeekendRace; live?: LiveFeed; updatedAt: Date | null } = $props();
+  }: {
+    race: RaceSummary;
+    weekendRace?: WeekendRace;
+    live?: LiveFeed;
+    cautions: WeekendRace['caution_segments'];
+    updatedAt: Date | null;
+  } = $props();
 
   let now = $state(Date.now());
   $effect(() => {
@@ -104,10 +111,9 @@
   </dl>
 
   {#if totalLaps > 0 && totalLaps < 999 && (liveRace || finished)}
-    {@const cautionSegs = weekendRace?.caution_segments ?? []}
     <div class="progress" role="img" aria-label="Lap {progressLap} of {totalLaps}">
       <div class="track">
-        {#each cautionSegs as c (c.start_lap)}
+        {#each cautions as c (c.start_lap)}
           <span
             class="caution"
             style:left="{((c.start_lap - 1) / totalLaps) * 100}%"
