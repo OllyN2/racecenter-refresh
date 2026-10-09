@@ -146,7 +146,7 @@
   {:else if tab === 'chart'}
     <PositionChart laps={history.data} feedState={lapFeed.feed.state} stageEnds={raceStageEnds(race, raceLive?.laps_in_race ?? (race.actual_laps || race.scheduled_laps))} />
   {:else if tab === 'stages'}
-    <StagesPoints series={race.series_id} raceId={race.race_id} {isLive} {weekendRace} />
+    <StagesPoints series={race.series_id} raceId={race.race_id} {isLive} {weekendRace} vehicles={raceFeed?.vehicles} />
   {/if}
 </div>
 

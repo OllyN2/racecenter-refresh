@@ -1,9 +1,9 @@
 <script lang="ts">
   import { feeds } from '../lib/api';
   import { parseDriver } from '../lib/format';
-  import { pointsMatchEntries } from '../lib/normalize';
+  import { leadersFromLive, pointsMatchEntries } from '../lib/normalize';
   import { useFeed } from '../lib/poll.svelte';
-  import type { PointsRow, WeekendRace } from '../lib/types';
+  import type { LiveVehicle, PointsRow, WeekendRace } from '../lib/types';
   import CarNumber from './CarNumber.svelte';
   import DriverName from './DriverName.svelte';
   import FeedStatus from './FeedStatus.svelte';
@@ -13,7 +13,8 @@
     raceId,
     isLive,
     weekendRace,
-  }: { series: number; raceId: number; isLive: boolean; weekendRace?: WeekendRace } = $props();
+    vehicles,
+  }: { series: number; raceId: number; isLive: boolean; weekendRace?: WeekendRace; vehicles?: LiveVehicle[] } = $props();
 
   const pointsFeed = useFeed<PointsRow[]>(
     () => feeds.points(series, raceId),
@@ -24,7 +25,8 @@
   const points = $derived.by(() => {
     const rows = pointsFeed.feed.data;
     if (!rows || !pointsMatchEntries(rows, entryIds)) return null;
-    return [...rows].sort((a, b) => a.points_position - b.points_position);
+    // The truck file lists drivers with no number and no points, several sharing driver_id 0; they add nothing.
+    return rows.filter((p) => p.points > 0 || p.car_number).sort((a, b) => a.points_position - b.points_position);
   });
   const chaseCut = $derived(points ? points.findIndex((p) => !p.is_in_chase) : -1);
   const hasChase = $derived(!!points?.some((p) => p.is_in_chase));
@@ -32,7 +34,8 @@
   const nameByCar = $derived(new Map(weekendRace?.results.map((r) => [r.car_number, parseDriver(r.driver_fullname).name]) ?? []));
   const stages = $derived(weekendRace?.stage_results ?? []);
   const cautions = $derived(weekendRace?.caution_segments ?? []);
-  const leaders = $derived(weekendRace?.race_leaders ?? []);
+  // The weekend feed fills in race_leaders after the race; during it, build the timeline from the live feed.
+  const leaders = $derived(weekendRace?.race_leaders?.length ? weekendRace.race_leaders : leadersFromLive(vehicles ?? []));
 </script>
 
 <div class="layout">
@@ -123,7 +126,7 @@
             </tr>
           </thead>
           <tbody>
-            {#each points as p, i (p.driver_id)}
+            {#each points as p, i (`${p.driver_id}-${p.points_position}`)}
               <tr class:cut={hasChase && i === chaseCut}>
                 <td class="r pos">{p.points_position}</td>
                 <td class="car"><CarNumber {series} number={p.car_number} /></td>

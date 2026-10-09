@@ -6,6 +6,7 @@ import type {
   LapTimes,
   LiveFeed,
   LiveVehicle,
+  PitStop,
   PointsRow,
   RaceSummary,
   WeekendRace,
@@ -106,6 +107,19 @@ export function liveRows(live: LiveFeed): LeaderboardRow[] {
       pits: pitCount(v.pit_stops),
       onTrack: v.is_on_track,
     }));
+}
+
+/** Pit-feed rows that are race stops: lap 0 rows are every car leaving pit road before the start, and rows under the checkered flag are post-race. */
+export function isRaceStop(p: PitStop): boolean {
+  return p.lap_count > 0 && p.pit_in_flag_status !== 4;
+}
+
+/** Leader timeline from the live feed, for when the weekend feed hasn't filled in race_leaders yet. */
+export function leadersFromLive(vehicles: LiveVehicle[]): { start_lap: number; end_lap: number; car_number: string }[] {
+  return vehicles
+    .flatMap((v) => (v.laps_led ?? []).map((r) => ({ start_lap: Math.max(r.start_lap, 1), end_lap: r.end_lap, car_number: v.vehicle_number })))
+    .filter((r) => r.end_lap >= r.start_lap)
+    .sort((a, b) => a.start_lap - b.start_lap);
 }
 
 export function hasFinalResults(race: WeekendRace | undefined): boolean {

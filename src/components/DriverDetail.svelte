@@ -82,10 +82,12 @@
       <dl class="stats">
         {#if s}
           <div><dt>Avg position</dt><dd>{s.average_running_position.toFixed(1)}</dd></div>
-          <div title="Green-flag passes made, and times passed">
-            <dt>Passes</dt><dd>{s.passes_made} <span class="unit">/ {s.times_passed} · {signed(s.passing_differential)}</span></dd>
-          </div>
-          <div title="Green-flag passes of cars running in the top 15"><dt>Quality passes</dt><dd>{s.quality_passes}</dd></div>
+          {#if insight.passesKnown}
+            <div title="Green-flag passes made, and times passed">
+              <dt>Passes</dt><dd>{s.passes_made} <span class="unit">/ {s.times_passed} · {signed(s.passing_differential)}</span></dd>
+            </div>
+            <div title="Green-flag passes of cars running in the top 15"><dt>Quality passes</dt><dd>{s.quality_passes}</dd></div>
+          {/if}
           <div title="Laps on which this car was the fastest on track"><dt>Fastest laps</dt><dd>{s.fastest_laps_run}</dd></div>
           {#if s.average_restart_speed > 0}
             <div><dt>Restart speed</dt><dd>{speed(s.average_restart_speed)} <span class="unit">mph</span></dd></div>

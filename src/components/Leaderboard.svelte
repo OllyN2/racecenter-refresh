@@ -66,7 +66,6 @@
   }
 
   function tireNote(t: NonNullable<CarInsight['tire']>): string {
-    if (t.fromStart) return 'since start';
     return t.tires == null ? 'since stop' : `${t.tires} tires`;
   }
 </script>
@@ -171,7 +170,8 @@
                   {#if ins?.onPitRoad}
                     <span class="muted">Pitting</span>
                   {:else if ins?.tire}
-                    {ins.tire.laps} {ins.tire.laps === 1 ? 'lap' : 'laps'}<span class="sub">{tireNote(ins.tire)}</span>
+                    {ins.tire.laps} {ins.tire.laps === 1 ? 'lap' : 'laps'}
+                    {#if !ins.tire.fromStart}<span class="sub">{tireNote(ins.tire)}</span>{/if}
                   {:else}–{/if}
                 </td>
               {:else if mode === 'timed'}

@@ -1,8 +1,8 @@
 import { lapTime, lastName, parseDriver } from './format';
+import { isRaceStop } from './normalize';
 import type { LapTimes, LiveVehicle, PitStop, ResultRow } from './types';
 
 const GREEN = 1;
-const CHECKERED = 4;
 const isCaution = (f: number | undefined) => f === 2 || f === 3;
 
 /** Front-of-field cutoff for restart stats; deeper cars are often lapped, and their lap numbers don't line up with the leader's. */
@@ -58,6 +58,8 @@ export interface CarInsight {
   dvp: boolean;
   /** Loop data (passes, average position, …) from the live feed for this race, if there is one. */
   stats: LiveVehicle | null;
+  /** NASCAR leaves passing stats at 0 for the whole field until after the race; hide them until they're filled in. */
+  passesKnown: boolean;
 }
 
 export interface InsightCard {
@@ -111,8 +113,7 @@ export const shortName = (car: string, fullName: string) => `#${car} ${lastName(
 function stopsFromPitFeed(pits: PitStop[]): Map<string, Stop[]> {
   const out = new Map<string, Stop[]>();
   for (const p of pits) {
-    // Lap 0 entries are pre-race; stops under the checkered flag are post-race trips down pit road.
-    if (p.lap_count <= 0 || p.pit_in_flag_status === CHECKERED) continue;
+    if (!isRaceStop(p)) continue;
     const changed = [p.left_front_tire_changed, p.left_rear_tire_changed, p.right_front_tire_changed, p.right_rear_tire_changed];
     const tires = changed.filter(Boolean).length;
     const side = tires === 2 && changed[2] && changed[3] ? 'right' : tires === 2 && changed[0] && changed[1] ? 'left' : null;
@@ -207,6 +208,7 @@ export function analyzeRace(input: RaceInput): RaceInsights {
   const pitStops = input.pits ? stopsFromPitFeed(input.pits) : new Map<string, Stop[]>();
   const byCarLive = new Map((vehicles ?? []).map((v) => [v.vehicle_number, v]));
   const restarts = restartLaps(flags);
+  const passesKnown = (vehicles ?? []).some((v) => v.passes_made > 0);
   const cars = new Map<string, CarInsight>();
 
   const carNumbers = new Set([...(laps?.laps.map((c) => c.Number) ?? []), ...byCarLive.keys()]);
@@ -253,6 +255,7 @@ export function analyzeRace(input: RaceInput): RaceInsights {
       onPitRoad: inProgress && !!lastStop && lastStop.pit_in_elapsed_time > 0 && !(lastStop.pit_out_elapsed_time > 0),
       dvp: inProgress && !!v?.is_on_dvp,
       stats: v && v.laps_completed > 0 ? v : null,
+      passesKnown,
     });
   }
 

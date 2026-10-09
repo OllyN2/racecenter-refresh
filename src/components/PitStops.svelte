@@ -1,5 +1,6 @@
 <script lang="ts">
   import { flagInfo, parseDriver } from '../lib/format';
+  import { isRaceStop } from '../lib/normalize';
   import type { FeedState } from '../lib/poll.svelte';
   import type { PitStop } from '../lib/types';
   import CarNumber from './CarNumber.svelte';
@@ -11,7 +12,7 @@
 
   let car = $state('');
   const stops = $derived(
-    [...(data ?? [])].sort((a, b) => b.pit_in_race_time - a.pit_in_race_time),
+    (data ?? []).filter(isRaceStop).sort((a, b) => b.pit_in_race_time - a.pit_in_race_time),
   );
   const cars = $derived.by(() => {
     const m = new Map<string, string>();
