@@ -29,8 +29,8 @@ within ~5 s of NASCAR publishing it, and the header shows the data's own timesta
 | `cf/cacher/{Y}/{S}/{R}/live-stage-points.json` | ~4 KB | ✓ live | Stage results as each stage ends. |
 | `cf/live/feeds/series_{S}/{R}/live_points.json` | ~65 KB | ✓ | Driver points as they run. |
 | `cf/cacher/{Y}/{S}/live-driver-points.json` | ~28 KB | | Live standings with `delta_chase`, `is_clinch`, `chase_eligible`. |
-| `cf/cacher/{Y}/{S}/{R}/lap-notes.json` | ~3 KB | ✓ | Written lap-by-lap notes. |
-| `ai.nascar.com/RaceNotes/{Y}/{R}/race-notes.json` | ~5 KB | | AI-written race notes by section (what NASCAR's page now shows). |
+| `cf/cacher/{Y}/{S}/{R}/lap-notes.json` | ~3 KB | fallback | Reporters' lap-by-lap notes (car numbers). Only used when a race has no AI notes. |
+| `ai.nascar.com/RaceNotes/{Y}/{R}/race-notes.json` | ~12–30 KB | ✓ | What NASCAR's timeline shows: the lap notes rewritten with driver names, a category per note (`section`: Driver Battles, Restart, Lead Change, …), periodic Race Snapshot summaries (HTML), `flag` (1000 = milestone). |
 | `cf/cacher/{Y}/{S}/{R}/snappytv.json` | ~25 KB | ✓ | Highlight clips (MP4s on `downforce.nascar.com`) tagged by lap. Pre-filled with the previous race's clips. `null` for trucks so far. |
 | `cf/cacher/live/live-highlights.json` | tiny | | Live highlights list (empty so far). |
 | `cf/cacher/{Y}/{S}/{R}/runs.json` | ~1 KB | | Weekend sessions with laps/time remaining, active/complete. |

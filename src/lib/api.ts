@@ -6,6 +6,7 @@ export const feeds = {
   raceList: (year: number, series: number) => `${BASE}/cacher/${year}/${series}/race_list_basic.json`,
   weekend: (year: number, series: number, race: number) => `${BASE}/cacher/${year}/${series}/${race}/weekend-feed.json`,
   lapTimes: (series: number, race: number) => `${BASE}/cacher/live/series_${series}/${race}/lap-times.json`,
+  raceNotes: (year: number, race: number) => `https://ai.nascar.com/RaceNotes/${year}/${race}/race-notes.json`,
   lapNotes: (year: number, series: number, race: number) => `${BASE}/cacher/${year}/${series}/${race}/lap-notes.json`,
   // ~130-190 KB, so it's only fetched when a driver's details are opened.
   rawFeed: (series: number, race: number) => `${BASE}/racing-insights/raw-feed/${race}-${['', 'NCS', 'NXS', 'NTS'][series] ?? ''}.json`,

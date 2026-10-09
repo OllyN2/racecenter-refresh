@@ -295,3 +295,9 @@ export interface LiveFlag {
   comment: string | null;
   beneficiary: string | null;
 }
+
+/** ai.nascar.com race notes: what NASCAR's racecenter timeline shows (AI-written, categorized, with snapshots). */
+export interface RaceNotesFeed {
+  raceID: number;
+  summary: { noteID: string; section: string; content: string; lap: string | number; flag: number }[];
+}

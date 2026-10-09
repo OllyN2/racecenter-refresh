@@ -1,7 +1,7 @@
 <script lang="ts">
   import { untrack } from 'svelte';
   import { feeds } from '../lib/api';
-  import { sessionLabel } from '../lib/format';
+  import { parseDriver, sessionLabel } from '../lib/format';
   import { analyzeRace } from '../lib/insights';
   import { LapHistory } from '../lib/laps.svelte';
   import {
@@ -62,6 +62,14 @@
       raceLive || (hasFinalResults(weekendRace) && !weekendCautions.length) ? feeds.flags(race.series_id, race.race_id) : null,
     () => (raceLive ? 15_000 : null),
   );
+  // Car number → driver name (entry list, then the live feed), for searching notes that only use names.
+  const drivers = $derived(
+    new Map([
+      ...(weekendRace?.results ?? []).map((r) => [r.car_number, parseDriver(r.driver_fullname).name] as const),
+      ...(raceFeed?.vehicles ?? []).map((v) => [v.vehicle_number, parseDriver(v.driver.full_name).name] as const),
+    ]),
+  );
+
   const cautions = $derived(
     weekendCautions.length ? weekendCautions : cautionsFromFlags(flagFeed.feed.data ?? [], raceLive?.lap_number ?? 0),
   );
@@ -187,7 +195,7 @@
       <div class="card"><p class="empty">The track map runs during a live race.</p></div>
     {/if}
   {:else if tab === 'notes'}
-    <LapNotes {year} series={race.series_id} raceId={race.race_id} {isLive} startMs={raceStartMs(race)} />
+    <LapNotes {year} series={race.series_id} raceId={race.race_id} {isLive} startMs={raceStartMs(race)} {drivers} />
   {:else if tab === 'pits'}
     <PitStops series={race.series_id} feedState={pitFeed.feed.state} />
   {:else if tab === 'chart'}
