@@ -44,6 +44,13 @@
     allPoints?.filter((p) => p.points > 0 || p.car_number).sort((a, b) => a.points_position - b.points_position) ?? null,
   );
   const hasChase = $derived(!!points?.some((p) => p.is_in_chase));
+  // A bold line under the last Chase driver separates the Chase field from everyone else.
+  const lastChase = $derived(points ? points.reduce((last, p, i) => (p.is_in_chase ? i : last), -1) : -1);
+
+  // Top 20 by default; the rest (often 90+ part-timers) behind a toggle.
+  const TOP = 20;
+  let showAll = $state(false);
+  const shown = $derived(points ? (showAll ? points : points.slice(0, TOP)) : []);
 
   const nameByCar = $derived(new Map(weekendRace?.results.map((r) => [r.car_number, parseDriver(r.driver_fullname).name]) ?? []));
   const stages = $derived(weekendRace?.stage_results?.length ? weekendRace.stage_results : stagesFromLive(liveStages.feed.data ?? []));
@@ -139,8 +146,8 @@
             </tr>
           </thead>
           <tbody>
-            {#each points as p (`${p.driver_id}-${p.points_position}`)}
-              <tr class:chase={p.is_in_chase}>
+            {#each shown as p, i (`${p.driver_id}-${p.points_position}`)}
+              <tr class:chase={p.is_in_chase} class:cut={i === lastChase}>
                 <td class="r pos">{p.points_position}</td>
                 <td class="car"><CarNumber {series} number={p.car_number} /></td>
                 {#snippet fastest()}
@@ -163,10 +170,16 @@
           </tbody>
         </table>
       </div>
-      {#if hasChase || points.some((p) => p.is_fastest_lap_point)}
+      {#if points.length > TOP}
+        <button class="more" aria-expanded={showAll} onclick={() => (showAll = !showAll)}>
+          {showAll ? `Show top ${TOP}` : `Show all ${points.length} drivers`}
+          <span class="chevron" aria-hidden="true">{showAll ? '▴' : '▾'}</span>
+        </button>
+      {/if}
+      {#if hasChase || shown.some((p) => p.is_fastest_lap_point)}
         <p class="note">
           {#if hasChase}<span class="item"><span class="swatch" aria-hidden="true"></span>Drivers in the Chase</span>{/if}
-          {#if points.some((p) => p.is_fastest_lap_point)}<span class="item"><FastestLapBadge sample /> Fastest lap (bonus point)</span>{/if}
+          {#if shown.some((p) => p.is_fastest_lap_point)}<span class="item"><FastestLapBadge sample /> Fastest lap (bonus point)</span>{/if}
         </p>
       {/if}
     {:else if pointsState.status === 'ok'}
@@ -264,6 +277,31 @@
   }
   tr.chase:hover td {
     background: var(--chase-wash-strong);
+  }
+  /* Beats the shared "no border on the last row" rule, so the line shows even when the list is collapsed. */
+  tr.cut td {
+    border-bottom: 2px solid var(--accent);
+  }
+  .more {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    width: 100%;
+    padding: 10px;
+    border: 0;
+    border-top: 1px solid var(--grid);
+    background: none;
+    color: var(--accent);
+    font-size: 13px;
+    font-weight: 600;
+    cursor: pointer;
+  }
+  .more:hover {
+    background: var(--surface-2);
+  }
+  .chevron {
+    font-size: 11px;
   }
   .note .item {
     display: inline-flex;
