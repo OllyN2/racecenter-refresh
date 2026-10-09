@@ -15,6 +15,7 @@
   import PositionChart from './PositionChart.svelte';
   import RaceHeader from './RaceHeader.svelte';
   import StagesPoints from './StagesPoints.svelte';
+  import TrackMap from './TrackMap.svelte';
 
   let {
     race,
@@ -49,7 +50,7 @@
   let wantPits = $state(false);
   $effect(() => {
     if (tab === 'leaderboard' || tab === 'chart') wantLaps = true;
-    if (tab === 'leaderboard' || tab === 'pits') wantPits = true;
+    if (tab === 'leaderboard' || tab === 'pits' || tab === 'track') wantPits = true;
   });
 
   const pitFeed = useFeed<PitStop[]>(
@@ -124,7 +125,7 @@
 <RaceHeader {race} {weekendRace} {live} updatedAt={liveUpdatedAt} />
 
 <nav class="tabs" aria-label="Race views">
-  {#each TABS as t (t.id)}
+  {#each TABS.filter((t) => t.id !== 'track' || raceLive || tab === 'track') as t (t.id)}
     <a href={href(race.series_id, race.race_id, t.id)} aria-current={t.id === tab ? 'page' : undefined}>{t.label}</a>
   {/each}
 </nav>
@@ -132,12 +133,18 @@
 <div class="panel">
   {#if tab === 'leaderboard'}
     {#if sources.length}
-      <Leaderboard {sources} series={race.series_id} {insights} />
+      <Leaderboard {sources} series={race.series_id} raceId={race.race_id} {insights} />
     {:else}
       <div class="card">
         <FeedStatus state={weekend.feed.state} unavailable="The entry list hasn't been published yet." />
         {#if weekend.feed.state.status === 'ok'}<p class="empty">The entry list hasn't been published yet.</p>{/if}
       </div>
+    {/if}
+  {:else if tab === 'track'}
+    {#if raceLive}
+      <TrackMap live={raceLive} {insights} />
+    {:else}
+      <div class="card"><p class="empty">The track map runs during a live race.</p></div>
     {/if}
   {:else if tab === 'notes'}
     <LapNotes {year} series={race.series_id} raceId={race.race_id} {isLive} startMs={raceStartMs(race)} />
@@ -146,7 +153,15 @@
   {:else if tab === 'chart'}
     <PositionChart laps={history.data} feedState={lapFeed.feed.state} stageEnds={raceStageEnds(race, raceLive?.laps_in_race ?? (race.actual_laps || race.scheduled_laps))} />
   {:else if tab === 'stages'}
-    <StagesPoints series={race.series_id} raceId={race.race_id} {isLive} {weekendRace} vehicles={raceFeed?.vehicles} />
+    <StagesPoints
+      series={race.series_id}
+      raceId={race.race_id}
+      {year}
+      {isLive}
+      {weekendRace}
+      vehicles={raceFeed?.vehicles}
+      currentLap={raceLive?.lap_number ?? 0}
+    />
   {/if}
 </div>
 

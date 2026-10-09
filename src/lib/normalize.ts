@@ -5,6 +5,8 @@ import type {
   LapNotes,
   LapTimes,
   LiveFeed,
+  LiveFlag,
+  LiveStage,
   LiveVehicle,
   PitStop,
   PointsRow,
@@ -112,6 +114,40 @@ export function liveRows(live: LiveFeed): LeaderboardRow[] {
 /** Pit-feed rows that are race stops: lap 0 rows are every car leaving pit road before the start, and rows under the checkered flag are post-race. */
 export function isRaceStop(p: PitStop): boolean {
   return p.lap_count > 0 && p.pit_in_flag_status !== 4;
+}
+
+/** Stage results from live-stage-points in the weekend feed's shape (it only fills them in after the race). */
+export function stagesFromLive(stages: LiveStage[]): WeekendRace['stage_results'] {
+  return stages.map((st) => ({
+    stage_number: st.stage_number,
+    results: st.results.map((r) => ({
+      driver_fullname: r.full_name,
+      driver_id: r.driver_id,
+      car_number: r.vehicle_number,
+      finishing_position: r.position,
+      stage_points: r.stage_points,
+    })),
+  }));
+}
+
+/** Caution segments from live-flag-data: each yellow/red until the next green (or now, if still out). */
+export function cautionsFromFlags(flags: LiveFlag[], currentLap: number): WeekendRace['caution_segments'] {
+  const out: WeekendRace['caution_segments'] = [];
+  for (let i = 0; i < flags.length; i++) {
+    const f = flags[i];
+    if (f.flag_state !== 2 && f.flag_state !== 3) continue;
+    if (i > 0 && (flags[i - 1].flag_state === 2 || flags[i - 1].flag_state === 3)) continue; // red within a caution
+    const green = flags.slice(i + 1).find((g) => g.flag_state === 1);
+    out.push({
+      start_lap: f.lap_number + 1,
+      end_lap: green ? green.lap_number : currentLap,
+      reason: f.comment ?? '',
+      comment: '',
+      beneficiary_car_number: flags.slice(i, green ? flags.indexOf(green) : undefined).find((g) => g.beneficiary)?.beneficiary ?? null,
+      flag_state: f.flag_state,
+    });
+  }
+  return out;
 }
 
 /** Leader timeline from the live feed, for when the weekend feed hasn't filled in race_leaders yet. */

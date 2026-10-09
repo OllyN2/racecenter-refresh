@@ -4,6 +4,7 @@
   import type { LiveFeed, RaceSummary, WeekendRace } from '../lib/types';
   import CarNumber from './CarNumber.svelte';
   import FlagPill from './FlagPill.svelte';
+  import RadioButton from './RadioButton.svelte';
 
   let {
     race,
@@ -63,6 +64,7 @@
     {#if live}
       <FlagPill code={live.flag_state} />
       <span class="session">{sessionLabel(live.run_name) || RUN_TYPES[live.run_type]}</span>
+      {#if liveRace}<RadioButton series={race.series_id} />{/if}
       <span class="live-dot" aria-hidden="true"></span>
       <span class="updated">Live · updated {clockTime(updatedAt)}</span>
     {:else if finished}

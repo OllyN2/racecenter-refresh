@@ -1,7 +1,9 @@
-export type Tab = 'leaderboard' | 'notes' | 'pits' | 'chart' | 'stages';
+export type Tab = 'leaderboard' | 'track' | 'notes' | 'pits' | 'chart' | 'stages';
 
 export const TABS: { id: Tab; label: string }[] = [
   { id: 'leaderboard', label: 'Leaderboard' },
+  // Only offered while a race is running (positions are estimated from live timing).
+  { id: 'track', label: 'Track' },
   { id: 'notes', label: 'Lap notes' },
   { id: 'pits', label: 'Pit stops' },
   { id: 'chart', label: 'Positions' },

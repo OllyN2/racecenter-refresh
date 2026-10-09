@@ -6,8 +6,10 @@ const CSP = [
   "script-src 'self'",
   "style-src 'self' 'unsafe-inline'",
   "img-src 'self' data: https://cf.nascar.com",
-  'connect-src https://cf.nascar.com',
-  'media-src https://downforce.nascar.com',
+  // 'self' for the per-track map files in public/tracks; sa.aws.nascar.com serves NRN radio (HLS).
+  "connect-src 'self' https://cf.nascar.com https://sa.aws.nascar.com",
+  // blob: is how hls.js hands audio to the <audio> element.
+  'media-src blob: https://downforce.nascar.com https://sa.aws.nascar.com',
   "base-uri 'none'",
   "form-action 'none'",
   "object-src 'none'",

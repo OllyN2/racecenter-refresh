@@ -1,15 +1,23 @@
 <script lang="ts">
   import { tick, untrack } from 'svelte';
+  import { feeds } from '../lib/api';
   import { lapTime, speed } from '../lib/format';
   import type { CarInsight, RaceInsights } from '../lib/insights';
   import type { BoardSource, LeaderboardRow } from '../lib/normalize';
+  import { useFeed } from '../lib/poll.svelte';
+  import type { RawFeed } from '../lib/types';
   import CarNumber from './CarNumber.svelte';
   import DriverDetail from './DriverDetail.svelte';
   import DriverName from './DriverName.svelte';
   import Insights from './Insights.svelte';
   import MakeBadge from './MakeBadge.svelte';
 
-  let { sources, series, insights = null }: { sources: BoardSource[]; series: number; insights?: RaceInsights | null } = $props();
+  let {
+    sources,
+    series,
+    raceId,
+    insights = null,
+  }: { sources: BoardSource[]; series: number; raceId: number; insights?: RaceInsights | null } = $props();
 
   let picked = $state<string | null>(null);
   const active = $derived(sources.find((s) => s.id === picked) ?? sources[0]);
@@ -52,6 +60,18 @@
   const COLS = 10;
 
   let open = $state<string | null>(null);
+
+  // The raw feed carries pit, running and crew details for the panel. It's big, so it loads on the first
+  // opened panel and then stays (refreshing with the race while live).
+  let wantRaw = $state(false);
+  $effect(() => {
+    if (open) wantRaw = true;
+  });
+  const raw = useFeed<RawFeed>(
+    () => (wantRaw ? feeds.rawFeed(series, raceId) : null),
+    () => (active?.live && wantRaw ? 30_000 : null),
+  );
+  const rawByCar = $derived(new Map((raw.feed.data?.Results ?? []).map((r) => [r.Number, r])));
 
   function canOpen(ins: CarInsight | undefined): ins is CarInsight {
     return !!ins && (ins.stints.length > 0 || !!ins.stats || ins.restarts.length > 0);
@@ -189,7 +209,7 @@
             </tr>
             {#if expandable && open === r.car}
               <tr class="detail-row" id="detail-{r.car}">
-                <td colspan={COLS}><DriverDetail insight={ins} /></td>
+                <td colspan={COLS}><DriverDetail insight={ins} raw={rawByCar.get(r.car)} /></td>
               </tr>
             {/if}
           {/each}

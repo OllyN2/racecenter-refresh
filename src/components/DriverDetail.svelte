@@ -1,8 +1,35 @@
 <script lang="ts">
   import { lapTime, speed } from '../lib/format';
   import type { CarInsight, Stint } from '../lib/insights';
+  import type { RawResult } from '../lib/types';
 
-  let { insight }: { insight: CarInsight } = $props();
+  let { insight, raw }: { insight: CarInsight; raw?: RawResult } = $props();
+
+  const ordinal = (n: number) => `${n}${n % 100 >= 11 && n % 100 <= 13 ? 'th' : (['th', 'st', 'nd', 'rd'][n % 10] ?? 'th')}`;
+  const stageFinishes = $derived(
+    raw ? [raw.S1Fin, raw.S2Fin, raw.S3Fin].map((p, i) => (p ? `S${i + 1} ${ordinal(p)}` : null)).filter(Boolean).join(' · ') : '',
+  );
+  const crew = $derived(
+    raw
+      ? [
+          ['Crew chief', raw.CrewChiefNameTag],
+          ['Spotter', raw.SpotterNameTag],
+          ['Owner', raw.TeamOwner],
+        ].filter(([, v]) => v)
+      : [],
+  );
+  const pitCrew = $derived(
+    raw
+      ? [
+          ['Jackman', raw.JackManNameTag],
+          ['Front tires', raw.FrontTireChangerNameTag],
+          ['Rear tires', raw.RearTireChangerNameTag],
+          ['Tire carrier', raw.TireCarrierNameTag],
+          ['Fueler', raw.GasManNameTag],
+        ].filter(([, v]) => v)
+      : [],
+  );
+  const secs = (n: number | null | undefined) => (n && n > 0 ? `${n.toFixed(1)}s` : '—');
 
   const s = $derived(insight.stats);
   const lastLap = $derived(insight.stints.at(-1)?.to ?? insight.green.at(-1)?.lap ?? 1);
@@ -96,7 +123,26 @@
         {#if best}
           <div><dt>Best lap</dt><dd>{lapTime(best.time)} <span class="unit">lap {best.lap}</span></dd></div>
         {/if}
+        {#if raw?.LapsInTop10 != null}
+          <div title="Laps run inside the top 5 and top 10">
+            <dt>Laps in top 10</dt><dd>{raw.LapsInTop10} <span class="unit">top 5: {raw.LapsInTop5 ?? 0}</span></dd>
+          </div>
+        {/if}
+        {#if raw?.PosGL10L != null}
+          <div title="Positions gained or lost over the last 10 laps"><dt>Last 10 laps</dt><dd>{signed(raw.PosGL10L)}</dd></div>
+        {/if}
+        {#if stageFinishes}
+          <div><dt>Stages</dt><dd class="small">{stageFinishes}</dd></div>
+        {/if}
       </dl>
+    {/if}
+
+    {#if raw?.TotalPitStops}
+      <h4>Pit road <span class="hint">{raw.TotalPitStops} {raw.TotalPitStops === 1 ? 'stop' : 'stops'} · {secs(raw.TotalTimeOnPitRoad)} on pit road</span></h4>
+      <p class="line">
+        Last stop lap {raw.LastStopCompLap}: {raw.LastStopTireCount ? `${raw.LastStopTireCount} tires` : 'fuel only'},
+        {secs(raw.LastStopTime)} stopped, {secs(raw.LastStopRollingTime)} rolling
+      </p>
     {/if}
 
     {#if insight.restarts.length}
@@ -106,6 +152,21 @@
           <li class:up={r.gain > 0} class:down={r.gain < 0}>Lap {r.lap} <strong>{signed(r.gain)}</strong></li>
         {/each}
       </ul>
+    {/if}
+    {#if raw?.LastChooseLine}
+      {@const side = { I: 'inside', O: 'outside' }[raw.LastChooseLine.trim().toUpperCase()] ?? raw.LastChooseLine.toLowerCase()}
+      <p class="line muted">Last restart: chose the {side} line{raw.LastChooseRowNumber ? `, row ${raw.LastChooseRowNumber}` : ''}</p>
+    {/if}
+
+    {#if crew.length}
+      <h4>Team</h4>
+      <p class="line">{#each crew as [k, v], i (k)}{i ? ' · ' : ''}<span class="muted">{k}</span> {v}{/each}</p>
+      {#if pitCrew.length}
+        <details>
+          <summary>Pit crew</summary>
+          <p class="line">{#each pitCrew as [k, v], i (k)}{i ? ' · ' : ''}<span class="muted">{k}</span> {v}{/each}</p>
+        </details>
+      {/if}
     {/if}
   </section>
 </div>
@@ -213,9 +274,27 @@
     font-weight: 500;
     color: var(--muted);
   }
+  .line {
+    margin: 0 0 10px;
+    font-size: 13px;
+    color: var(--ink-2);
+  }
+  .muted {
+    color: var(--muted);
+  }
+  dd.small {
+    font-size: 13px;
+  }
+  details summary {
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--ink-2);
+    cursor: pointer;
+    margin-bottom: 4px;
+  }
   .restarts {
     list-style: none;
-    margin: 0;
+    margin: 0 0 10px;
     padding: 0;
     display: flex;
     flex-wrap: wrap;

@@ -1,9 +1,9 @@
 <script lang="ts">
   import { feeds } from '../lib/api';
   import { parseDriver } from '../lib/format';
-  import { leadersFromLive, pointsMatchEntries } from '../lib/normalize';
+  import { cautionsFromFlags, leadersFromLive, pointsMatchEntries, stagesFromLive } from '../lib/normalize';
   import { useFeed } from '../lib/poll.svelte';
-  import type { LiveVehicle, PointsRow, WeekendRace } from '../lib/types';
+  import type { LiveFlag, LiveStage, LiveVehicle, PointsRow, WeekendRace } from '../lib/types';
   import CarNumber from './CarNumber.svelte';
   import DriverName from './DriverName.svelte';
   import FeedStatus from './FeedStatus.svelte';
@@ -14,7 +14,27 @@
     isLive,
     weekendRace,
     vehicles,
-  }: { series: number; raceId: number; isLive: boolean; weekendRace?: WeekendRace; vehicles?: LiveVehicle[] } = $props();
+    year,
+    currentLap = 0,
+  }: {
+    series: number;
+    raceId: number;
+    isLive: boolean;
+    weekendRace?: WeekendRace;
+    vehicles?: LiveVehicle[];
+    year: number;
+    currentLap?: number;
+  } = $props();
+
+  // The weekend feed only fills in stage results and cautions after the race; these small feeds have them live.
+  const liveStages = useFeed<LiveStage[]>(
+    () => (isLive ? feeds.stagePoints(year, series, raceId) : null),
+    () => (isLive ? 30_000 : null),
+  );
+  const liveFlags = useFeed<LiveFlag[]>(
+    () => (isLive ? feeds.flags(series, raceId) : null),
+    () => (isLive ? 30_000 : null),
+  );
 
   const pointsFeed = useFeed<PointsRow[]>(
     () => feeds.points(series, raceId),
@@ -32,8 +52,10 @@
   const hasChase = $derived(!!points?.some((p) => p.is_in_chase));
 
   const nameByCar = $derived(new Map(weekendRace?.results.map((r) => [r.car_number, parseDriver(r.driver_fullname).name]) ?? []));
-  const stages = $derived(weekendRace?.stage_results ?? []);
-  const cautions = $derived(weekendRace?.caution_segments ?? []);
+  const stages = $derived(weekendRace?.stage_results?.length ? weekendRace.stage_results : stagesFromLive(liveStages.feed.data ?? []));
+  const cautions = $derived(
+    weekendRace?.caution_segments?.length ? weekendRace.caution_segments : cautionsFromFlags(liveFlags.feed.data ?? [], currentLap),
+  );
   // The weekend feed fills in race_leaders after the race; during it, build the timeline from the live feed.
   const leaders = $derived(weekendRace?.race_leaders?.length ? weekendRace.race_leaders : leadersFromLive(vehicles ?? []));
 </script>

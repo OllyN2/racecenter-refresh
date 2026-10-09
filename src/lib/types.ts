@@ -32,6 +32,8 @@ export interface LiveVehicle {
   driver: { driver_id: number; full_name: string; is_in_chase: boolean };
   delta: number;
   laps_completed: number;
+  /** Race clock (s) when the car last crossed the start/finish line. */
+  vehicle_elapsed_time: number;
   last_lap_time: number;
   last_lap_speed: number;
   best_lap_time: number;
@@ -240,4 +242,56 @@ export interface ClipItem {
   expired: boolean;
   status: string;
   downloads?: { resolution: string; bitrate: string; url: string }[];
+}
+
+/** NASCAR's "raw feed" (racing-insights): one row per car with ~120 running stats. Only the fields we show. */
+export interface RawFeed {
+  Results: RawResult[];
+}
+
+export interface RawResult {
+  Number: string;
+  S1Fin: number | null;
+  S2Fin: number | null;
+  S3Fin: number | null;
+  LastRestartPosition: number | null;
+  LastRestartGL: number | null;
+  LastChooseLine: string | null;
+  LastChooseRowNumber: number | null;
+  TotalTimeOnPitRoad: number | null;
+  TotalPitStops: number | null;
+  LastStopTireCount: number | null;
+  LastStopCompLap: number | null;
+  LastStopTime: number | null;
+  LastStopRollingTime: number | null;
+  LapsInTop5: number | null;
+  LapsInTop10: number | null;
+  LapsOnLeadLap: number | null;
+  BestGreenPos: number | null;
+  WorstGreenPos: number | null;
+  PosGL10L: number | null;
+  TotalPositionsGained: number | null;
+  TotalPositionsLost: number | null;
+  CrewChiefNameTag: string | null;
+  SpotterNameTag: string | null;
+  TeamOwner: string | null;
+  JackManNameTag: string | null;
+  GasManNameTag: string | null;
+  FrontTireChangerNameTag: string | null;
+  RearTireChangerNameTag: string | null;
+  TireCarrierNameTag: string | null;
+}
+
+/** live-stage-points.json: stage results as each stage ends. */
+export interface LiveStage {
+  stage_number: number;
+  results: { position: number; vehicle_number: string; driver_id: number; full_name: string; stage_points: number }[];
+}
+
+/** live-flag-data.json: every flag change with the caution reason and free-pass car. */
+export interface LiveFlag {
+  lap_number: number;
+  flag_state: number;
+  comment: string | null;
+  beneficiary: string | null;
 }
