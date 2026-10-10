@@ -1,113 +1,168 @@
 # NASCAR data feeds
 
-Every feed NASCAR's racecenter (`www.nascar.com/live-results/...`) loads or references, found by recording the
-page's network traffic during a live race (Charlotte trucks, race 5688, 2026-10-09) and reading
-`ndms_race_widgets/asset/js/racecenter-scripts.min.js`. `{Y}` season, `{S}` series (1 Cup, 2 O'Reilly, 3 Trucks),
-`{R}` race id, `{CODE}` NCS / NXS / NTS.
+Every NASCAR data feed we know of, what it holds, and whether this site uses it. Sources:
 
-All `cf.nascar.com` and `ai.nascar.com` feeds send `Access-Control-Allow-Origin: *` and are uncompressed. Feeds that
-don't exist yet return **403** from S3. During a race most live feeds change about every **30 s**, even though
-live-ops says to refresh every 5 s.
+- **web**: NASCAR's racecenter page (`www.nascar.com/live-results/...`), from recording its network traffic during a
+  live race (Charlotte trucks, race 5688, 2026-10-09) and reading
+  `ndms_race_widgets/asset/js/racecenter-scripts.min.js`.
+- **app**: the mobile app's config, `https://cf.nascar.com/mobile-cms/general/debug/config.json` (68 KB, its `Feeds`
+  section).
+- **probe**: found or checked by requesting URLs directly.
 
-Measured during the Charlotte truck race (polling every 2 s for 150 s): every copy of the live feed changed every
-30–40 s, and its `time_of_day_os` was already ~17 s old when it appeared. Lap times and live points changed every
-~40 s, the raw feed every ~60 s, and stage points when a stage ended. Pit data, flags, lap notes and clips changed
-only when something happened. The site polls the live feed every 5 s (mostly cheap 304s), so it shows each update
-within ~5 s of NASCAR publishing it, and the header shows the data's own timestamp.
+Placeholders: `cf/` = `https://cf.nascar.com/`, `{Y}` season, `{S}` series (1 Cup, 2 O'Reilly, 3 Trucks), `{CODE}`
+NCS / NXS / NTS, `{R}` race id, `{driverId}` NASCAR driver id, `{trackId}` NASCAR track id (Charlotte is 162).
+Sizes are from the 2026-10-09 Charlotte truck race.
 
-**Used** marks what this site reads today: *panel* = only when a driver's details are open, *live* = only during a race, *build* = split into `public/tracks/` by `npm run tracks`.
+**How the feeds behave**
 
-## Live race
+- All `cf.nascar.com`, `ai.nascar.com` and `s3.nascar.com` feeds send `Access-Control-Allow-Origin: *`, and none are
+  compressed.
+- A feed that doesn't exist yet returns **403** from S3.
+- Several "current race" feeds have **no race id**. They keep the last race's data until the next one starts, so
+  check them against the race you're showing.
+- During a race, every copy of the live feed changed every 30–40 s, even though live-ops says to refresh every 5 s,
+  and its `time_of_day_os` was ~17 s old when it appeared. Lap times and live points changed every ~40 s, the raw
+  feed every ~60 s. Pit data, flags, notes and clips changed only when something happened. Measured by polling every
+  2 s for 150 s.
+- The site polls the live feed every 5 s (mostly cheap 304s) and shows the data's own timestamp in the header.
 
-| Feed | Size (race) | Used | What it has |
-| --- | --- | --- | --- |
-| `cf/live/feeds/live-feed.json` | ~47 KB | ✓ | Current session: lap, flag, every car's position, gap, last/best lap, laps led ranges, pit stops, loop stats. Same data at `cf/cacher/live/live-feed.json`, `cf/cacher/live/series_{S}/{R}/live-feed.json`, `cf/live/feeds/series_{S}/{R}/live_feed.json`. |
-| `cf/racing-insights/raw-feed/{R}-{CODE}.json` | ~127 KB | ✓ panel | NASCAR's "raw feed": `RunData` (lap, flag, cautions, leaders, and the track's fuel/tire windows: `FuelMax`/`TireMax` in green-flag laps, warning thresholds, `PitWindowMin`/`Max`), `FlagSummary`, and ~120 fields per car (incl. green/yellow-flag laps since the last stop and last 4-tire stop): `DeltaNext`, `AvgLapTimeSince{2..30}LapsAgo`, `PosGL{2..30}L`, `LastRestartPosition/GL`, `LapsSinceLastPit`, `LastStopTireCount`, box/rolling stop times, laps in top 2/5/10, stage finishes, choose-cone pick, crew chief, spotter, full pit crew, team owner. |
-| `cf/cacher/racinginsights/graphics/{S}-tireandfuelstatus.json` | ~8 KB | ✓ live | NASCAR's official tire and fuel status per car: `FuelPctRemain`, `TirePctRemain`, `FuelColor`/`TireColor` (Green/Yellow/Red), laps when lefts/rights were changed and when fueled, laps since each. One file per series with **no race id**: it keeps the previous race's numbers until the next race updates it. Not referenced by the racecenter script; the app config calls it `TireAndFuelStatusUrl`. |
-| `cf/cacher/live/series_{S}/{R}/lap-times.json` | grows to ~640 KB | ✓ | Every lap time and running position per car, plus flag per lap. Downloaded once; new laps come from the live feed. |
-| `cf/cacher/live/series_{S}/{R}/live-pit-data.json` | ~40–190 KB | ✓ | Every stop: tires changed, box time, in/out travel, positions gained. Lap 0 rows are pre-race, checkered rows post-race. |
-| `cf/cacher/live/series_{S}/{R}/live-flag-data.json` | <1 KB | ✓ live | Flag changes with elapsed time, caution reason (`comment`) and free-pass `beneficiary`. |
-| `cf/cacher/{Y}/{S}/{R}/live-stage-points.json` | ~4 KB | ✓ live | Stage results as each stage ends. |
-| `cf/live/feeds/series_{S}/{R}/live_points.json` | ~65 KB | ✓ | Driver points as they run. |
-| `cf/cacher/{Y}/{S}/live-driver-points.json` | ~28 KB | | Live standings with `delta_chase`, `is_clinch`, `chase_eligible`. |
-| `cf/cacher/{Y}/{S}/{R}/lap-notes.json` | ~3 KB | fallback | Reporters' lap-by-lap notes (car numbers). Only used when a race has no AI notes. |
-| `ai.nascar.com/RaceNotes/{Y}/{R}/race-notes.json` | ~12–30 KB | ✓ | What NASCAR's timeline shows: the lap notes rewritten with driver names, a category per note (`section`: Driver Battles, Restart, Lead Change, …), periodic Race Snapshot summaries (HTML), `flag` (1000 = milestone). |
-| `cf/cacher/{Y}/{S}/{R}/snappytv.json` | ~25 KB | ✓ | Highlight clips (MP4s on `downforce.nascar.com`) tagged by lap. Pre-filled with the previous race's clips. `null` for trucks so far. |
-| `cf/cacher/live/live-highlights.json` | tiny | | Live highlights list (empty so far). |
-| `cf/cacher/{Y}/{S}/{R}/runs.json` | ~1 KB | | Weekend sessions with laps/time remaining, active/complete. |
+**Used** column: ✓ always, *live* only during a race, *panel* only when a driver's details are open, *fallback* when
+the preferred feed is missing, *build* read by `npm run tracks` into `public/tracks/`.
 
-## Weekend, results and standings
+## Live timing and scoring
 
-| Feed | Used | What it has |
-| --- | --- | --- |
-| `cf/cacher/{Y}/{S}/race_list_basic.json` | ✓ | Season schedule for one series (`cf/cacher/{Y}/race_list_basic.json` has all three, 265 KB). |
-| `cf/cacher/{Y}/{S}/{R}/weekend-feed.json` | ✓ | Race summary, results, practice/qualifying runs; cautions, leaders and stage results fill in after the race. |
-| `cf/raceresults?year={Y}&series={S}&raceid={R}` | | Results in raw-feed shape (`RunData`, `Results`, `FlagSummary`). |
-| `cf/cacher/{Y}/{S}/{R}/entryList.json` | | Entry list with crew chief, team, hometown, birth date. |
-| `cf/cacher/live/series_{S}/{R}/lap-averages.json` | | Practice 5/10/15/20/25/30-lap averages. |
-| `cf/cacher/live/series_{S}/{R}/lap-times-practice.json` | | Practice lap times. |
-| `cf/raceSessionResults/{S}/{R}/practice/results-{n}.json`, `.../qualifying/results-{n}.json`, `cf/data/cacher/production/{Y}/{S}/{R}/practice-{n}.json` | | Session results (403 for this race). |
-| `cf/cacher/{Y}/{S}/points-feed.json`, `cf/cacher/{Y}/{S}/final/{S}-owners-points.json` | | Season driver and owner points. |
-| `cf/cacher/{Y}/{S}/drivers-combined-feed-v2.json`, `cf/cacher/drivers.json` (1.4 MB) | | Driver bios, images, car badges. |
-| `cf/cacher/{Y}/{S}/schedule-combined-feed.json`, `cf/cacher/tracks.json` | | Schedule and track details. |
-| `cf/racing-insights/inseason-challenge/bracketdata.json` | | In-Season Challenge bracket. |
+| Feed | Size | Used | Found | What it has |
+| --- | --- | --- | --- | --- |
+| `cf/live/feeds/live-feed.json` | ~47–85 KB | ✓ | probe | The current session (practice, qualifying or race): lap, flag, laps to go, stage, cautions, lead changes, and for every car: position, gap to the leader (`delta`, negative = laps down), last/best lap and speed, laps-led ranges, pit stops (an entry appears only once the car leaves pit road), status (1 running, other = out), `is_on_track` (false while running = on pit road), `is_on_dvp`, loop stats (average position, fastest laps run, restart speed; passes stay 0 until after the race). Identical copies: `cf/cacher/live/live-feed.json` (web, app), `cf/cacher/live/series_{S}/{R}/live-feed.json` (web), `cf/live/feeds/series_{S}/{R}/live_feed.json` (web). |
+| `cf/raceSessionResults/{S}/{R}/race/results.json` | ~47 KB | | app | The "cached composite feed": the same shape as the Ably `VehicleEntryList` push. Has `et`, `run` (laps, laps remaining, time remaining), `flgs` (every flag with time), `entries` (driver, owner, vehicle details), `results` per car (position, lap, lap time, speed, best lap, interval `gap_tm`, total time, status text such as "DNF/Accident"), `leaders`, and `riRun` (cautions, stage ends, fuel/tire windows). Not yet known whether it updates faster than the live feed during a race. |
+| `cf/cacher/live/series_{S}/{R}/lap-times.json` | grows to ~640 KB | ✓ | web | Every lap's time, speed and running position for every car, plus the flag on each lap. The site downloads it once and adds new laps from the live feed. Year-path copy: `cf/cacher/{Y}/{S}/{R}/lap-times.json` (app). |
+| `cf/cacher/live/series_{S}/{R}/live-pit-data.json` | ~40–190 KB | ✓ | probe | Every stop: lap, flag in/out, tires changed (per corner), stopped time, in/out travel time, total time on pit road, positions gained or lost. Lap 0 rows are cars leaving pit road before the start; rows under the checkered flag are post-race. Copies: `cf/cacher/live/live-pit-data-app.json` (app, current race, no race id), `cf/cacher/{Y}/{S}/{R}/live-pit-data.json` (app). |
+| `cf/cacher/live/series_{S}/{R}/live-flag-data.json` | <1 KB | ✓ live | probe | Every flag change with lap, elapsed time, caution reason (`comment`) and free-pass `beneficiary`. The site builds live caution segments from it, because the weekend feed only lists them after the race. |
+| `cf/cacher/{Y}/{S}/{R}/live-stage-points.json` | ~4–7 KB | ✓ live | web, app | Stage results (position, car, driver, stage points) as each stage ends. |
+| `cf/cacher/{Y}/{S}/{R}/runs.json` | ~1 KB | | web | The weekend's sessions (practice, qualifying, race) with laps and time remaining and active/complete flags. |
+
+## Racing insights
+
+NASCAR's "racing insights" data. The racecenter page uses the raw feed; the rest come from the app config's
+`RacingInsightsFeeds` group plus its season points file. Probing ~45 other names in `cf/cacher/racinginsights/graphics/`
+and the other endpoints on `feed.racinginsights.com` found nothing else.
+
+| Feed | Size | Used | Found | What it has |
+| --- | --- | --- | --- | --- |
+| `cf/racing-insights/raw-feed/{R}-{CODE}.json` | ~107–190 KB | ✓ panel | web | The full "raw feed". `RunData` holds lap, flag, cautions, lead changes, stage ends, the longest green run, and the track's fuel/tire windows (`FuelMax`/`TireMax` in green-flag laps, yellow/red thresholds, `PitWindowMin`/`Max`). `FlagSummary` holds time under each flag. `Results` has ~111 fields per car: position, gap to the leader and to the car ahead (`DeltaNext`), average lap time over the last 2–30 laps, positions gained/lost over the last 2–30 laps, last restart position and gain, choose-cone pick, laps since pit (green and yellow), last stop (tires, stopped time, rolling time), total pit-road time, laps in the top 2/5/10, best/worst position, stage finishes, crew chief, spotter, owner and full pit crew. Exists for past races too. |
+| `cf/cacher/live/current-results.json` | ~77 KB | | web, app | The current race's racing-insights results in the raw feed's shape, minus 35 fields (last-N-lap gains and averages, `DeltaNext`, green/yellow laps since pit, total positions gained/lost). No race id. |
+| `cf/cacher/{Y}/{S}/{R}/current-results.json` | ~77 KB | | app | The same, for a given race (the app's post-race results). |
+| `cf/cacher/racinginsights/graphics/{S}-tireandfuelstatus.json` | ~8 KB | ✓ live | app | NASCAR's official fuel and tire status per car: `FuelPctRemain`, `TirePctRemain`, `FuelColor`/`TireColor` (Green/Yellow/Red), lap when last fueled, laps when the lefts and rights were changed, laps since each. One file per series with no race id; the site only uses it when its cars match the field and nobody was fueled after the current lap. Drives the Fuel · Tires gauges. |
+| `cf/cacher/live/altleaderboard.json` | ~12 KB | ✓ live | app | NASCAR's alternate leaderboards for the race in progress: `AvgLaptimeLast10` and `AvgLaptimeLast20` (green-flag averages, whole field), `FastestLaps` (ten fastest single laps), `LapLeaders`, `StagePoints`, `Gainers` and `Losers` since the last restart. No race id; checked like the tire file. Drives the "Last 10" column, the Fastest-right-now and Biggest-gain-since-the-restart cards, and the live fastest-lap badge. |
+| `cf/cacher/{Y}/{S}/racinginsights-points-feed.json` | ~52 KB | | app | Season driver standings with racing-insights extras: playoff rank and points, `projected_playoff_points`, `is_clinch`, `playoff_eligible`, `pre_week_points_pos` and `pos_gl` (positions gained or lost in the standings this week), stage wins, top 5/10, laps led, DNFs. |
+| `feed.racinginsights.com/feed/livepoints?series={CODE}&raceid={R}` | ~28 KB | | app | Live standings API; the same rows as `live-driver-points.json`. |
+| `cf/racing-insights/inseason-challenge/bracketdata.json` | ~20 KB | | web, app | In-Season Challenge bracket: rounds, matchups, next event. The app has its screen switched off. |
+
+## Points and standings
+
+| Feed | Size | Used | Found | What it has |
+| --- | --- | --- | --- | --- |
+| `cf/live/feeds/series_{S}/{R}/live_points.json` | ~65 KB | ✓ | web | Driver points for a race as they run: position, points, behind, points this race, stage points, wins, top 5/10, `is_in_chase` (the reliable Chase flag), `is_fastest_lap_point` (holder of the fastest-lap bonus point), `is_points_eligible`. Before a race it can still hold another series' standings. Copy for the current race: `cf/cacher/live/live-points-app.json` (app). |
+| `cf/cacher/{Y}/{S}/live-driver-points.json` | ~28 KB | | web, app | Live series standings with `delta_chase`, `is_clinch` and `chase_eligible`. |
+| `cf/cacher/{Y}/{S}/live-driver-points-sim.json` | ~24 KB | | web | A points simulation (projected positions and stage points per driver). Last updated January 2026, so stale. |
+| `cf/cacher/{Y}/{S}/points-feed.json` | ~73 KB | | web (live-ops) | Season driver points with wins, stage wins, top 5/10, laps led, DNFs and winnings. |
+| `cf/cacher/{Y}/{S}/final/{S}-manufacturer-points.json` | ~1 KB | ✓ | app | Season manufacturer standings: points, wins, behind. Shown on Stages & points. |
+| `cf/cacher/{Y}/{S}/ownerpoints-feed.json` | ~15 KB | | app | Owner standings (the owner championship). Final copy: `cf/cacher/{Y}/{S}/final/{S}-owners-points.json` (web). |
+
+## Notes, clips and highlights
+
+| Feed | Size | Used | Found | What it has |
+| --- | --- | --- | --- | --- |
+| `ai.nascar.com/RaceNotes/{Y}/{R}/race-notes.json` | ~12–30 KB | ✓ | web | What NASCAR's timeline shows: the lap notes rewritten with driver names, one category per note (`section`: Driver Battles, Restart, Lead Change, Pit Stop, …), Race Snapshot summaries as HTML every ~30 laps, and `flag` (1 green, 2 caution, 4 checkered, 1000 milestone). |
+| `cf/cacher/{Y}/{S}/{R}/lap-notes.json` | ~3–13 KB | fallback | probe, app | The reporters' original lap-by-lap notes, with car numbers. Used only when a race has no AI notes. |
+| `cf/cacher/{Y}/{S}/{R}/snappytv.json` | ~25 KB | ✓ | web, app | Highlight clips: title, length, tags (including "lap N"), and MP4 renditions on `downforce.nascar.com` ("-high" is 720p). Clips appear a few minutes after the moment. The next race's file is pre-filled with the previous race's clips, so the site ignores clips published before the race started. |
+| `cf/cacher/live/live-highlights.json` | tiny | | web, app | Live highlights list (empty all race at Charlotte). |
+| `cf/mobile-cms/temp/Feed/MostPopularMedia_STUB.json` | tiny | | app | Placeholder ("most popular" media, empty). |
+| `1kg8ceiq2a.execute-api.us-east-1.amazonaws.com/PROD/?type=getEntries&raceID={R}` | <1 KB | | web | Up/down votes on each race note (`noteid`, `upVote`, `downVote`), the counts shown on NASCAR's timeline. |
+
+## Weekend, schedule and results
+
+| Feed | Size | Used | Found | What it has |
+| --- | --- | --- | --- | --- |
+| `cf/cacher/{Y}/{S}/race_list_basic.json` | 66–111 KB | ✓ | app, probe | One series' season schedule: race, track, dates, laps, stage lengths, TV/radio, results summary. The all-series file `cf/cacher/{Y}/race_list_basic.json` is 265 KB, and `cf/cacher/{Y}/race_list_basic1.json` (app) is a 259 KB variant. Scheduled laps can be wrong (Charlotte trucks listed 167, ran 134), so the live feed's `laps_in_race` wins. |
+| `cf/cacher/{Y}/{S}/schedule-feed.json` | 22–34 KB | | app | Every session of the season for a series (practice, qualifying, race) with start/end times. |
+| `cf/cacher/{Y}/{S}/schedule-combined-feed.json`, `cf/cacher/{Y}/sorted-schedule-combined-feed.json` | 150 / 595 KB | | web / app | One entry per race: race state, logos, track images and links, date, ticket links, TV and radio. The sorted file covers all series. |
+| `cf/cacher/{Y}/{S}/{R}/weekend-feed.json` | ~55 KB | ✓ | web, app | Race summary, entry list/results, and practice/qualifying results. Caution segments, race leaders and stage results only fill in after the race. |
+| `cf/cacher/{Y}/{S}/{R}/entryList.json` | ~56 KB | | web | Entry list with crew chief, team, hometown and birth date. |
+| `cf/raceresults?year={Y}&series={S}&raceid={R}` | ~63 KB | | web | Results in the raw feed's shape (`RunData`, `Results`, `FlagSummary`). |
+| `cf/raceSessionResults/{S}/{R}/practice/results-{n}.json`, `.../qualifying/results-{n}.json`, `cf/data/cacher/production/{Y}/{S}/{R}/practice-{n}.json` | | | web | Session results (403 for the Charlotte truck race). |
+| `cf/cacher/live/series_{S}/{R}/lap-averages.json` | ~15 KB | | web | Practice 5/10/15/20/25/30-lap averages. Year-path copy: `cf/cacher/{Y}/{S}/{R}/lap-averages.json` (app). |
+| `cf/cacher/live/series_{S}/{R}/lap-times-practice.json` | ~81 KB | | web | Practice lap times. |
+| `cf/cacher/{Y}/race_list_basic_watch.json` | | | app | 403. |
+
+## Drivers, teams and tracks
+
+| Feed | Size | Used | Found | What it has |
+| --- | --- | --- | --- | --- |
+| `cf/cacher/drivers.json` | 1.4 MB | | web | Every driver: bio, images, car badge URL, team, sponsor, career stats. |
+| `cf/cacher/{Y}/{S}/drivers-combined-feed-v2.json`, `cf/cacher/{Y}/{S}/drivers-combined-feed1.json` | 55 / 24 KB | | web / app | A series' drivers with bios and badges. |
+| `cf/cacher/{Y}/{S}/drivers/{driverId}-info-feed.json` | ~17 KB | | app | One driver's career summary by track (starts, wins, top 5/10, poles, DNFs, laps led, average start and finish), by track type, by race and by year. |
+| `cf/cacher/{Y}/{S}/drivers/{driverId}-race-list.json` | ~118 KB | | app | One driver's races in a season. |
+| `cf/cacher/drivers-additional-info.json` | tiny | | app | A leftover single entry (Jeff Gordon). The config's path (`cacher/cacher/...`) returns 403. |
+| `cf/cacher/{Y}/teams.json` | ~4 KB | | app | Teams: name, manufacturer, logo, link. |
+| `cf/cacher/tracks.json` | ~53 KB | | web | Track details. |
+| `cf/cacher/tracks/static-all-tracks.json` | ~48 KB | | app | Track details: surface, type, banking, year built, city/state, straightaway lengths, seating, owner. |
+| `cf/cacher/tracks/bolt6_tracks_properties.json` | ~28 KB | | app | Per track: mapped map coordinates. |
 
 ## Track map
 
-| Feed | Used | What it has |
-| --- | --- | --- |
-| `cf/data/images/vector-tracks/svg/{trackId}.svg` | | ~2 KB outline of the track (Charlotte is 162). |
-| `cf/cacher/tracks/trackMapConfigs.json` (269 KB) | ✓ build | Per track: map rotation/zoom and the racing line as SVG path segments with lengths. The Track tab places cars on this line using live-feed timing (`vehicle_elapsed_time`, `last_lap_time`). |
-| `cf/cacher/tracks/layouts.json` (337 KB) | | Per track: GPS bounds, heading, finish-line coordinates. |
-| `cf/cacher/tracks/dots.json` (819 KB) | | Sample of the per-car Ably messages (format reference only). |
+| Feed | Size | Used | Found | What it has |
+| --- | --- | --- | --- | --- |
+| `cf/cacher/tracks/trackMapConfigs.json` | 269 KB | ✓ build | web | Per track: map rotation and zoom, center latitude/longitude, the racing line as ordered SVG path segments from the start/finish line, pit road paths and finish-line position. `npm run tracks` splits it into `public/tracks/{trackId}.json` (~2 KB each). The Track tab places cars on the line from live-feed timing, and the center checks the weather file's location. |
+| `cf/cacher/tracks/layouts.json` | 337 KB | | web | Per track: GPS bounds, heading, finish-line coordinates. |
+| `cf/data/images/vector-tracks/svg/{trackId}.svg` | ~2 KB | | web | Plain outline of the track. |
+| `cf/cacher/tracks/dots.json` | 819 KB | | web | A sample of the per-car Ably messages (`location`, `mph`, gear, throttle, brake, RPM, steering). Format reference only. |
+| `cf/cacher/tracks/trackPreview.webm` | 2.2 MB | | web | Preview video shown before the map loads. |
 
-## Images, video, audio
+## Weather
 
-| Feed | Used | What it has |
-| --- | --- | --- |
-| `cf/data/images/carbadges/{S}/{number}.png` | ✓ | Car number artwork. |
-| `cf/data/images/makes/{make}.png` | | Make logos (we bundle our own). |
-| `downforce.nascar.com/output/.../*.mp4` | ✓ | Clip files from the SnappyTV feed. |
-| `cf/config/audio/audio_mapping_{S}_3.json` | ✓ NRN | 40 scanner streams (HLS on `sa.aws.nascar.com`). Only NRN radio has `requiresAuth: false`; driver and officials channels need a NASCAR subscription. |
-| `cf/live-ops/live-ops.json` | | Site config: refresh interval, video/radio stream URLs, feature switches. |
+| Feed | Size | Used | Found | What it has |
+| --- | --- | --- | --- | --- |
+| `s3.nascar.com/openweather/weather.json` | ~35 KB | ✓ | app | Weather at this weekend's track: location, `current` conditions (temperature, condition, wind, humidity, chance of rain) and a 2-day hourly `forecast`. No race id; the site shows it only within 30 km of the race's track, as current conditions during the race or the race-time forecast for one starting within two days. |
 
-## From NASCAR's mobile app config
+## Images, video and audio
 
-`cf.nascar.com/mobile-cms/general/debug/config.json` (68 KB, `Feeds` section) lists the app's feeds; `{BaseUrl}` is
-`https://cf.nascar.com`. Probed for the 2026-10-09 Charlotte truck race; all `cf`/`s3` ones send CORS `*`.
+| Feed | Size | Used | Found | What it has |
+| --- | --- | --- | --- | --- |
+| `cf/data/images/carbadges/{S}/{number}.png` | 1–5 KB each | ✓ | web, probe | Car number artwork, 78×70. A missing number returns 403. |
+| `cf/data/images/makes/{make}.png` | | | web | Make logos. The site bundles its own copies instead. |
+| `downforce.nascar.com/output/7/prod/{clipId}/mp4/*.mp4` | ~6 MB/min | ✓ | web | Clip files from the SnappyTV feed. No cookies, supports range requests. |
+| `cf/config/audio/audio_mapping_{S}_3.json` | ~9 KB | ✓ live | web, app | 40 scanner streams (HLS on `sa.aws.nascar.com`): All Scan, every driver, officials, NRN. Only NRN radio has `requiresAuth: false`; it's the site's NRN radio button. |
+| Video streams in live-ops (`dw9ptu32blt7h.cloudfront.net/...m3u8`, `live.nascar.com/presspass01/master.m3u8`, `mrn.streamguys1.com/...`) | | | web | Hero player and Press Pass streams and the MRN radio stream named in live-ops. Not checked further. |
 
-| Feed | Size | Used | What it has |
-| --- | --- | --- | --- |
-| `cf/cacher/live/altleaderboard.json` | ~12 KB | ✓ live | NASCAR's alternate leaderboards for the race in progress: `AvgLaptimeLast10`/`20` (whole field), `FastestLaps` (top 10 single laps), `LapLeaders`, `StagePoints`, `Gainers`/`Losers` since the last restart. No race id; the site checks the cars and laps match. Drives the "Last 10" column, the Fastest-right-now and since-the-restart cards, and the live fastest-lap badge. |
-| `cf/cacher/racinginsights/graphics/{S}-tireandfuelstatus.json` | ~8 KB | ✓ live | See above (`TireAndFuelStatusUrl`). |
-| `s3.nascar.com/openweather/weather.json` | ~35 KB | ✓ | Weather at this weekend's track: `current` conditions and a 2-day hourly `forecast`. No race id; shown only within 30 km of the race's track (centers come from the track files). |
-| `cf/cacher/{Y}/{S}/final/{S}-manufacturer-points.json` | ~1 KB | ✓ | Season manufacturer standings (points, wins, behind). |
-| `cf/raceSessionResults/{S}/{R}/race/results.json` | ~47 KB | | The "cached composite feed": same shape as the Ably `VehicleEntryList` push (`et`, `run`, `flgs`, `entries` with driver/owner/vehicle, `results` with interval `gap_tm`, `leaders`, `riRun` with fuel/tire windows). Check its update rate during a race. |
-| `cf/cacher/live/current-results.json`, `cf/cacher/{Y}/{S}/{R}/current-results.json` | ~77 KB | | Racing-insights results (`RunData`, `Results`, `FlagSummary`) for the current race / a given race; a smaller cousin of the raw feed. |
-| `cf/cacher/live/live-points-app.json`, `cf/cacher/live/live-pit-data-app.json` | 65 / 128 KB | | Current race's live points and pit data (global copies of the per-race files). |
-| `feed.racinginsights.com/feed/livepoints?series={CODE}&raceid={R}` | ~28 KB | | Racing-insights live points API (same rows as `live-driver-points.json`). |
-| `cf/cacher/{Y}/{S}/racinginsights-points-feed.json` | ~52 KB | | Season points with playoff ranks. |
-| `cf/cacher/{Y}/{S}/ownerpoints-feed.json` | ~15 KB | | Owner standings. |
-| `cf/cacher/{Y}/{S}/drivers/{driverId}-info-feed.json`, `.../{driverId}-race-list.json` | 17 / 118 KB | | Per-driver career summaries (by track, track type, year) and race list. |
-| `cf/cacher/tracks/static-all-tracks.json`, `cf/cacher/tracks/bolt6_tracks_properties.json` | 48 / 28 KB | | Track details and properties. |
-| `cf/cacher/{Y}/race_list_basic1.json`, `cf/cacher/{Y}/sorted-schedule-combined-feed.json` (595 KB), `cf/cacher/{Y}/{S}/drivers-combined-feed1.json`, `cf/cacher/{Y}/teams.json` | | | Schedules, drivers, teams. |
-| `cf/cacher/{Y}/{S}/{R}/lap-times.json`, `cf/cacher/{Y}/{S}/{R}/live-pit-data.json` | | | Per-race copies of the live lap times and pit data under the year path. |
-| `cf/mobile-cms/live-na.json` | ~5 KB | | App state: which live features are on (Live Camera, InCar Audio, Dot Racing, …). |
-| `cf/cacher/{Y}/{S}/article-feed.json`, `cf/cacher/{Y}/app-video-feed.json`, `.../app-article-feed.json`, `.../app-gallery-feed.json`, `cf/page-config/prod/homePage2025.json` | up to ~1 MB | | News, video and gallery feeds. |
-| `d3bd0tgyk368z1.cloudfront.net/feeds/epg/...json` | ~214 KB | | TV program guide. |
-| Rewards, AR and splash configs (`cf/rewards/prod/*`, `cf/mobile-cms/ar_*`, `cf/mobile-cms/splash/*`) | | | App-only. |
-| `cf/cacher/{Y}/{S}/{R}/winner-odds.json`, `fantasygames.nascar.com/api/static-v1/live/odds/race/{R}.json` | | | Betting odds: 403/404. |
-| `www.nascar.com/json/playoff_standings_drivers/?wid={S}`, `cf/cacher/{Y}/race_list_basic_watch.json` | | | Cloudflare bot check / 403. |
-| Sportvision `wss://test.nascardatalive.com/raceviewweb` | | | RaceView's position stream: the host no longer resolves (staging `ws://dev.nascardatalive.com:5002` is unencrypted, which browsers block on HTTPS). |
+## Site and app configuration
 
-## Restricted (not usable from this site)
+| Feed | Size | Used | Found | What it has |
+| --- | --- | --- | --- | --- |
+| `cf/live-ops/live-ops.json` | ~14 KB | | web | NASCAR's site config: live refresh interval (5000 ms), stream URLs, feature switches (`live_drive_ng_hide_telemetry`), Chase text. Staging copy: `cf/data/live-ops/stage/live-ops.json`. |
+| `cf/mobile-cms/general/debug/config.json` | 68 KB | | app | The mobile app's config: every feed in this document marked "app", feature flags, menus, strings. |
+| `cf/mobile-cms/live-na.json` | ~5 KB | | app | The app's live state: the race it treats as live, the current race id per series, and which live features are on (Live Camera, InCar Audio, Dot Racing, Timeline, …). |
+| `cf/page-config/prod/homePage2025.json` | ~18 KB | | app | Home page layout and headlines. |
+| `cf/cacher/{Y}/{S}/article-feed.json`, `cf/cacher/{Y}/app-article-feed.json`, `cf/cacher/{Y}/app-video-feed.json`, `cf/cacher/{Y}/app-gallery-feed.json` | up to ~1 MB | | app | News articles, videos and photo galleries. |
+| `d3bd0tgyk368z1.cloudfront.net/feeds/epg/nascar01_nascar/AMG00115C1.json` | ~214 KB | | app | TV program guide. |
+| `cf/rewards/prod/*.json`, `cf/mobile-cms/ar_sim_feed.json`, `cf/cacher/2020/1/ar-portal-feed.json`, `cf/mobile-cms/splash/**` | | | app | Fan rewards, AR features and splash animations. App-only. |
+| `fantasygames.nascar.com` | | | app | Fantasy games API base. Not checked further. |
 
-- **Ably realtime** (`wss://main.realtime.ably.net`). Channel `VehicleEntryList` pushes a leaderboard snapshot about
-  every 15 s. Channel `vehicle{number}` pushes each car's GPS `location`, `mph`, `nGear`, `Throttle Position`,
-  `Brake Pressure`, `Engine Speed` and `aSteering`. Tokens come from
-  `f2akd1igr7.execute-api.us-east-1.amazonaws.com/Prod?nlbwa=1`, which only answers requests from `www.nascar.com`
-  (other origins get a 502). Getting around that would mean faking NASCAR's origin, so this site doesn't use it.
+## Not usable from this site
+
+- **Ably realtime** (`wss://main.realtime.ably.net`) carries NASCAR's GPS positions and telemetry.
+  - Channel `VehicleEntryList` pushes a leaderboard snapshot about every 15 s.
+  - Channel `vehicle{number}` pushes each car's GPS `location`, `mph`, `nGear`, `Throttle Position`, `Brake Pressure`,
+    `Engine Speed` and `aSteering`.
+  - Tokens come from `f2akd1igr7.execute-api.us-east-1.amazonaws.com/Prod?nlbwa=1`, which only answers requests from
+    `www.nascar.com`; other origins get a 502. Getting around that would mean faking NASCAR's origin, so the site
+    doesn't.
+- **Sportvision RaceView stream**: `wss://test.nascardatalive.com/raceviewweb` (app) no longer resolves. The staging
+  `ws://dev.nascardatalive.com:5002/racefeed` is unencrypted, which browsers block on HTTPS pages.
 - **NASCAR Drive** (`cf/drive/{S}/configs-ng.json`): needs CloudFront signed cookies.
-- **Scanner channels** with `requiresAuth: true`.
-- `1kg8ceiq2a.execute-api.../PROD/?type=getEntries` is only up/down votes on race notes, and
-  `www.nascar.com/json/schedule` sits behind Cloudflare's bot check.
+- **Scanner channels** with `requiresAuth: true`: need a NASCAR subscription.
+- **Betting odds**: `cf/cacher/{Y}/{S}/{R}/winner-odds.json` (app) returns 403, and
+  `fantasygames.nascar.com/api/static-v1/live/odds/race/{R}.json` (app) returns 404.
+- **`www.nascar.com/json/...`**: `json/schedule/?season={Y}` (web) and `json/playoff_standings_drivers/?wid={S}` (app)
+  sit behind Cloudflare's bot check.
+- **`jllw22czv9.execute-api.us-east-1.amazonaws.com/prod/nascar-rewards`** (web): account-only rewards check-in.
