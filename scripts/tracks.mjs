@@ -22,6 +22,8 @@ for (const [id, t] of Object.entries(all)) {
     line: join(d.TrackPaths),
     pit: d.PitPaths?.length ? join(d.PitPaths) : null,
     finish: d.FinishLine ? [Number(d.FinishLine.TranslateX), Number(d.FinishLine.TranslateY)] : null,
+    // [lat, lon], used to check that NASCAR's weather file is for this track.
+    center: t.center ? [Number(t.center.latitude.toFixed(4)), Number(t.center.longitude.toFixed(4))] : null,
   };
   fs.writeFileSync(new URL(`${id}.json`, OUT), JSON.stringify(track));
   n++;

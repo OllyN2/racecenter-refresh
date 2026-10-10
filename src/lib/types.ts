@@ -72,6 +72,7 @@ export interface RaceSummary {
   series_id: number;
   race_season: number;
   race_name: string;
+  track_id: number;
   track_name: string;
   race_date: string;
   date_scheduled: string;
@@ -321,4 +322,39 @@ export interface TireFuelStatus {
   Fueled: number;
   LapsSinceFuel: number;
   FuelPctRemain: number;
+}
+
+/** cacher/live/altleaderboard.json: NASCAR's alternate leaderboards for the race in progress (no race id). */
+export interface AltLeaderboards {
+  /** Average lap time over the last 10 laps (green-flag), whole field. Pos is running position. */
+  AvgLaptimeLast10: { Pos: number; CarNum: string; LastName: string; DriverID: number; AvgLapTimeLast10: number }[];
+  /** The ten fastest single laps of the race. */
+  FastestLaps: { Pos: number; Number: string; LapsCompleted: number; LastLapTime: number; LastName: string; DriverID: number }[];
+  /** Positions gained since the last restart. */
+  Gainers: { Number: string; LastName: string; DriverID: number; RunningPos: number; LastRestart: number; PosGained: number }[];
+}
+
+interface WeatherHour {
+  time_epoch: number;
+  temp_f: number;
+  condition: { text: string };
+  chance_of_rain: number;
+  wind_mph: number;
+  wind_dir: string;
+}
+
+/** s3.nascar.com/openweather/weather.json: conditions at the current race weekend's track (no race id). */
+export interface Weather {
+  location: { name: string; region: string; lat: number; lon: number };
+  current: { temp_f: number; condition: { text: string }; wind_mph: number; wind_dir: string; last_updated_epoch: number };
+  forecast: { forecastday: { date: string; hour: WeatherHour[] }[] };
+}
+
+/** Season manufacturer standings for a series. */
+export interface ManufacturerPoints {
+  position: string;
+  manufacturer: string;
+  points: number;
+  wins: number;
+  delta_leader: string | number;
 }

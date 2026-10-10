@@ -1,6 +1,6 @@
 import { lapTime, lastName, parseDriver } from './format';
 import { isRaceStop } from './normalize';
-import type { LapTimes, LiveVehicle, PitStop, ResultRow } from './types';
+import type { AltLeaderboards, LapTimes, LiveVehicle, PitStop, ResultRow } from './types';
 
 const GREEN = 1;
 const isCaution = (f: number | undefined) => f === 2 || f === 3;
@@ -63,7 +63,7 @@ export interface CarInsight {
 }
 
 export interface InsightCard {
-  id: 'fastest' | 'battle' | 'longrun' | 'restart' | 'mover';
+  id: 'fastest' | 'battle' | 'longrun' | 'restart' | 'gainer' | 'mover';
   label: string;
   car: string;
   title: string;
@@ -74,6 +74,8 @@ export interface InsightCard {
 export interface RaceInsights {
   cars: Map<string, CarInsight>;
   cards: InsightCard[];
+  /** Pace is NASCAR's official 10-lap average (alternate leaderboards) rather than our 5-lap green-flag average. */
+  officialPace: boolean;
 }
 
 export interface RaceInput {
@@ -85,6 +87,8 @@ export interface RaceInput {
   inProgress: boolean;
   flag: number | null;
   results?: ResultRow[];
+  /** NASCAR's alternate leaderboards for this race, already checked to be current; preferred over our own math. */
+  official?: AltLeaderboards | null;
 }
 
 const mean = (xs: number[]) => xs.reduce((a, b) => a + b, 0) / xs.length;
@@ -208,6 +212,9 @@ export function analyzeRace(input: RaceInput): RaceInsights {
   const pitStops = input.pits ? stopsFromPitFeed(input.pits) : new Map<string, Stop[]>();
   const byCarLive = new Map((vehicles ?? []).map((v) => [v.vehicle_number, v]));
   const restarts = restartLaps(flags);
+  const officialPace = input.official?.AvgLaptimeLast10?.length
+    ? new Map(input.official.AvgLaptimeLast10.map((x) => [x.CarNum, x.AvgLapTimeLast10]))
+    : null;
   const passesKnown = (vehicles ?? []).some((v) => v.passes_made > 0);
   const cars = new Map<string, CarInsight>();
 
@@ -242,7 +249,7 @@ export function analyzeRace(input: RaceInput): RaceInsights {
       tire,
       stops,
       green,
-      pace: inProgress ? pace(green, 5) : null,
+      pace: inProgress ? (officialPace ? (officialPace.get(num) ?? null) : pace(green, 5)) : null,
       fastest: false,
       battle: null,
       stints: runs,
@@ -265,7 +272,8 @@ export function analyzeRace(input: RaceInput): RaceInsights {
       .filter((v) => v.status === 1)
       .map((v) => cars.get(v.vehicle_number))
       .filter((c): c is CarInsight => !!c && c.pace != null)
-      .filter((c) => input.flag !== GREEN || (c.green.at(-1)?.lap ?? 0) >= (c.stats?.laps_completed ?? 0) - 8)
+      // Our own averages can go stale for a parked car; NASCAR's list only has cars that are running.
+      .filter((c) => !!officialPace || input.flag !== GREEN || (c.green.at(-1)?.lap ?? 0) >= (c.stats?.laps_completed ?? 0) - 8)
       .sort((a, b) => a.pace! - b.pace!);
     if (paceRank[0]) paceRank[0].fastest = true;
 
@@ -288,7 +296,7 @@ export function analyzeRace(input: RaceInput): RaceInsights {
     }
   }
 
-  return { cars, cards: pickCards(cars, input, paceRank) };
+  return { cars, cards: pickCards(cars, input, paceRank), officialPace: !!officialPace };
 }
 
 function pickCards(cars: Map<string, CarInsight>, input: RaceInput, paceRank: CarInsight[]): InsightCard[] {
@@ -305,7 +313,7 @@ function pickCards(cars: Map<string, CarInsight>, input: RaceInput, paceRank: Ca
         car: best.car,
         title: title(best),
         value: lapTime(best.pace),
-        note: next ? `5-lap average · ${(next.pace! - best.pace!).toFixed(3)}s quicker than ${lastName(parseDriver(next.name).name)}` : '5-lap average',
+        note: `${input.official ? '10-lap' : '5-lap'} average${next ? ` · ${(next.pace! - best.pace!).toFixed(3)}s quicker than ${lastName(parseDriver(next.name).name)}` : ''}`,
       });
     }
 
@@ -345,11 +353,27 @@ function pickCards(cars: Map<string, CarInsight>, input: RaceInput, paceRank: Ca
     });
   }
 
+  // While running, NASCAR's own "gainers since the last restart" replaces our tally of restart gains.
+  const gainer = input.inProgress
+    ? [...(input.official?.Gainers ?? [])].sort((a, b) => b.PosGained - a.PosGained).find((g) => g.PosGained > 0)
+    : undefined;
+  if (gainer) {
+    const c = cars.get(gainer.Number);
+    cards.push({
+      id: 'gainer',
+      label: 'Biggest gain since the restart',
+      car: gainer.Number,
+      title: c ? title(c) : `#${gainer.Number} ${gainer.LastName.replace(/\s*\(.*?\)|\s*#/g, '').trim()}`,
+      value: `+${gainer.PosGained}`,
+      note: `P${gainer.LastRestart} → P${gainer.RunningPos}`,
+    });
+  }
+
   const restarter = all
     .filter((c) => c.restarts.length >= 2)
     .map((c) => ({ c, total: c.restarts.reduce((n, r) => n + r.gain, 0) }))
     .sort((a, b) => b.total - a.total)[0];
-  if (restarter && restarter.total > 0) {
+  if (!gainer && restarter && restarter.total > 0) {
     cards.push({
       id: 'restart',
       label: 'Best restarter',

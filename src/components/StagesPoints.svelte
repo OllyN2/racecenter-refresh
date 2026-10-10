@@ -3,10 +3,11 @@
   import { parseDriver } from '../lib/format';
   import { leadersFromLive, stagesFromLive } from '../lib/normalize';
   import { useFeed, type FeedState } from '../lib/poll.svelte';
-  import type { LiveStage, LiveVehicle, PointsRow, WeekendRace } from '../lib/types';
+  import type { LiveStage, LiveVehicle, ManufacturerPoints, PointsRow, WeekendRace } from '../lib/types';
   import CarNumber from './CarNumber.svelte';
   import DriverName from './DriverName.svelte';
   import FastestLapBadge from './FastestLapBadge.svelte';
+  import MakeBadge from './MakeBadge.svelte';
   import FeedStatus from './FeedStatus.svelte';
 
   let {
@@ -34,6 +35,12 @@
   } = $props();
 
   // The weekend feed only fills in stage results after the race; live-stage-points has them live.
+  // Season manufacturer standings (1 KB); NASCAR updates them after each race.
+  const makes = useFeed<ManufacturerPoints[]>(
+    () => feeds.manufacturerPoints(year, series),
+    () => null,
+  );
+
   const liveStages = useFeed<LiveStage[]>(
     () => (isLive ? feeds.stagePoints(year, series, raceId) : null),
     () => (isLive ? 30_000 : null),
@@ -188,6 +195,30 @@
       <FeedStatus state={pointsState} unavailable="Points for this race haven't been published yet." />
     {/if}
   </section>
+
+  {#if makes.feed.data?.length}
+    <section class="card full">
+      <h2>Manufacturer standings</h2>
+      <div class="table-wrap">
+        <table class="data">
+          <thead>
+            <tr><th class="r">Pos</th><th>Make</th><th class="r">Points</th><th class="r">Behind</th><th class="r">Wins</th></tr>
+          </thead>
+          <tbody>
+            {#each makes.feed.data as m (m.manufacturer)}
+              <tr>
+                <td class="r pos">{m.position}</td>
+                <td><MakeBadge make={m.manufacturer} /></td>
+                <td class="r strong">{m.points}</td>
+                <td class="r">{m.delta_leader === 'LEADER' || !Number(m.delta_leader) ? '—' : `-${Math.abs(Number(m.delta_leader))}`}</td>
+                <td class="r">{m.wins}</td>
+              </tr>
+            {/each}
+          </tbody>
+        </table>
+      </div>
+    </section>
+  {/if}
 </div>
 
 <style>

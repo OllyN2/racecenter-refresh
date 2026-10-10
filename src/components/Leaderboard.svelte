@@ -156,7 +156,11 @@
             {#if mode !== 'entry'}<th class="r">Gap</th>{/if}
             {#if mode === 'race'}
               <th class="r">Last lap</th>
-              <th class="r wide" title="Average of the last 5 green-flag laps">Pace</th>
+              {#if analysis?.officialPace}
+                <th class="r wide" title="NASCAR's average lap time over the last 10 laps">Last 10</th>
+              {:else}
+                <th class="r wide" title="Average of the last 5 green-flag laps">Pace</th>
+              {/if}
               <th class="r wide">Led</th>
               {#if tireFuelByCar}
                 <th class="r wide" title="NASCAR's tire and fuel status: share of fuel and tire life left">Fuel · Tires</th>

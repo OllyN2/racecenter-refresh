@@ -17,7 +17,17 @@
   } from '../lib/normalize';
   import { useFeed } from '../lib/poll.svelte';
   import { href, TABS, type Tab } from '../lib/route.svelte';
-  import type { LapTimes, LiveFeed, LiveFlag, PitStop, PointsRow, RaceSummary, WeekendFeed } from '../lib/types';
+  import type {
+    AltLeaderboards,
+    LapTimes,
+    LiveFeed,
+    LiveFlag,
+    PitStop,
+    PointsRow,
+    RaceSummary,
+    WeekendFeed,
+    Weather,
+  } from '../lib/types';
   import FeedStatus from './FeedStatus.svelte';
   import Leaderboard from './Leaderboard.svelte';
   import LapNotes from './LapNotes.svelte';
@@ -41,6 +51,14 @@
     liveUpdatedAt: Date | null;
     tab: Tab;
   } = $props();
+
+  function distanceKm(lat1: number, lon1: number, lat2: number, lon2: number): number {
+    const rad = Math.PI / 180;
+    const a =
+      Math.sin(((lat2 - lat1) * rad) / 2) ** 2 +
+      Math.cos(lat1 * rad) * Math.cos(lat2 * rad) * Math.sin(((lon2 - lon1) * rad) / 2) ** 2;
+    return 12742 * Math.asin(Math.sqrt(a));
+  }
 
   const isLive = $derived(!!live);
   const year = $derived(race.race_season);
@@ -92,10 +110,49 @@
   });
   const chaseIds = $derived(new Set((points ?? []).filter((p) => p.is_in_chase).map((p) => p.driver_id)));
 
+  // Weather (35 KB) during a race, or for one starting within two days (the file forecasts today and tomorrow).
+  // It's for whatever track NASCAR is at this weekend, so it's only shown within 30 km of this race's track.
+  const raceStart = $derived(raceStartMs(race));
+  const weatherWanted = $derived(
+    !!raceLive || (!hasFinalResults(weekendRace) && raceStart > Date.now() - 6 * 3600_000 && raceStart < Date.now() + 48 * 3600_000),
+  );
+  const trackFile = useFeed<{ center: [number, number] | null }>(
+    () => (weatherWanted ? `./tracks/${race.track_id}.json` : null),
+    () => null,
+  );
+  const weatherFeed = useFeed<Weather>(
+    () => (weatherWanted ? feeds.weather() : null),
+    () => (raceLive ? 600_000 : null),
+  );
+  const weather = $derived.by(() => {
+    const w = weatherFeed.feed.data;
+    const c = trackFile.feed.data?.center;
+    return w && c && distanceKm(w.location.lat, w.location.lon, c[0], c[1]) < 30 ? w : null;
+  });
+
+  // NASCAR's alternate leaderboards (12 KB) for the running race: official 10-lap averages, fastest laps and
+  // gainers since the restart. One global file with no race id, so it's only trusted when its cars are this
+  // field and its fastest lap isn't from beyond the current lap.
+  const altFeed = useFeed<AltLeaderboards>(
+    () => (raceLive ? feeds.altLeaderboards() : null),
+    () => (raceLive ? 30_000 : null),
+  );
+  const official = $derived.by(() => {
+    const a = altFeed.feed.data;
+    if (!a || !raceLive) return null;
+    const field = new Set(raceLive.vehicles.map((v) => v.vehicle_number));
+    const list = a.AvgLaptimeLast10 ?? [];
+    const ours = list.length ? list.filter((x) => field.has(x.CarNum)).length / list.length : 0;
+    const fresh = (a.FastestLaps ?? []).every((f) => f.LapsCompleted <= raceLive.lap_number + 1);
+    return ours >= 0.8 && fresh ? a : null;
+  });
+
   // The race's fastest lap earns a bonus point. While running: the quickest best lap in the live feed (already
   // polled; matched NASCAR's own flag all night at Charlotte). Afterwards: that flag, from the race's points file.
   const fastestLap = $derived.by(() => {
     if (raceLive) {
+      const o = [...(official?.FastestLaps ?? [])].sort((a, b) => a.LastLapTime - b.LastLapTime)[0];
+      if (o) return { car: o.Number, time: o.LastLapTime, lap: o.LapsCompleted };
       const v = raceLive.vehicles.filter((x) => x.best_lap_time > 0).sort((a, b) => a.best_lap_time - b.best_lap_time)[0];
       return v ? { car: v.vehicle_number, time: v.best_lap_time, lap: v.best_lap || null } : null;
     }
@@ -161,6 +218,7 @@
           inProgress: !!raceLive && raceLive.flag_state !== 4,
           flag: raceLive?.flag_state ?? null,
           results: weekendRace?.results,
+          official,
         })
       : null,
   );
@@ -190,7 +248,7 @@
   });
 </script>
 
-<RaceHeader {race} {weekendRace} {live} {cautions} updatedAt={liveUpdatedAt} />
+<RaceHeader {race} {weekendRace} {live} {cautions} {weather} updatedAt={liveUpdatedAt} />
 
 <nav class="tabs" aria-label="Race views">
   {#each TABS.filter((t) => t.id !== 'track' || raceLive || tab === 'track') as t (t.id)}

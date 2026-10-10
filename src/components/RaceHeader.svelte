@@ -1,7 +1,7 @@
 <script lang="ts">
   import { clockTime, localDateTime, parseDriver, parseTimestamp, RUN_TYPES, SERIES, sessionLabel, speed } from '../lib/format';
   import { hasFinalResults, raceStageEnds, raceStartMs } from '../lib/normalize';
-  import type { LiveFeed, RaceSummary, WeekendRace } from '../lib/types';
+  import type { LiveFeed, RaceSummary, WeekendRace, Weather } from '../lib/types';
   import CarNumber from './CarNumber.svelte';
   import FlagPill from './FlagPill.svelte';
   import RadioButton from './RadioButton.svelte';
@@ -11,12 +11,15 @@
     weekendRace,
     live,
     cautions,
+    weather = null,
     updatedAt,
   }: {
     race: RaceSummary;
     weekendRace?: WeekendRace;
     live?: LiveFeed;
     cautions: WeekendRace['caution_segments'];
+    /** NASCAR's weather for this track (already matched by location), during or just before the race. */
+    weather?: Weather | null;
     updatedAt: Date | null;
   } = $props();
 
@@ -37,6 +40,25 @@
   const dataTime = $derived.by(() => {
     const t = live ? parseTimestamp(live.time_of_day_os) : NaN;
     return Number.isFinite(t) ? new Date(t) : updatedAt;
+  });
+
+  // Now during the race; before it, the hourly forecast nearest the green flag.
+  const weatherLine = $derived.by(() => {
+    if (!weather) return '';
+    const wind = (dir: string, mph: number) => (mph >= 1 ? ` · Wind ${dir} ${Math.round(mph)} mph` : '');
+    if (live?.run_type === 3) {
+      const c = weather.current;
+      return `${Math.round(c.temp_f)}°F · ${c.condition.text}${wind(c.wind_dir, c.wind_mph)}`;
+    }
+    const t = start / 1000;
+    const hour = weather.forecast.forecastday
+      .flatMap((d) => d.hour)
+      .reduce<Weather['forecast']['forecastday'][number]['hour'][number] | null>(
+        (best, h) => (!best || Math.abs(h.time_epoch - t) < Math.abs(best.time_epoch - t) ? h : best),
+        null,
+      );
+    if (!hour || Math.abs(hour.time_epoch - t) > 3600) return '';
+    return `Race-time forecast: ${Math.round(hour.temp_f)}°F · ${hour.condition.text} · ${hour.chance_of_rain}% chance of rain${wind(hour.wind_dir, hour.wind_mph)}`;
   });
 
   const totalLaps = $derived(liveRace && live ? live.laps_in_race : race.actual_laps || race.scheduled_laps);
@@ -72,6 +94,7 @@
     {#if Number.isFinite(start)}· {localDateTime(start)}{/if}
     {#if race.television_broadcaster}· {race.television_broadcaster}{/if}
   </p>
+  {#if weatherLine}<p class="weather">{weatherLine}</p>{/if}
 
   <div class="status">
     {#if live}
@@ -163,6 +186,11 @@
     font-weight: 700;
     margin-top: 6px;
     letter-spacing: -0.01em;
+  }
+  .weather {
+    margin: 4px 0 0;
+    font-size: 13px;
+    color: var(--muted);
   }
   .meta {
     margin: 4px 0 0;
