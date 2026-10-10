@@ -10,6 +10,7 @@
   import DriverDetail from './DriverDetail.svelte';
   import DriverName from './DriverName.svelte';
   import FastestLapBadge from './FastestLapBadge.svelte';
+  import FuelTires from './FuelTires.svelte';
   import Insights from './Insights.svelte';
   import MakeBadge from './MakeBadge.svelte';
 
@@ -80,17 +81,20 @@
 
   let open = $state<string | null>(null);
 
-  // The raw feed carries pit, running and crew details for the panel. It's big, so it loads on the first
-  // opened panel and then stays (refreshing with the race while live).
+  // NASCAR's raw feed (~130 KB): fuel and tire windows for the live table, plus pit, running and crew details for
+  // the panel. Live races load it up front; otherwise it waits for the first opened panel. It changes about
+  // once a minute, so that's how often it's polled.
   let wantRaw = $state(false);
   $effect(() => {
-    if (open) wantRaw = true;
+    if (open || (active?.live && mode === 'race')) wantRaw = true;
   });
   const raw = useFeed<RawFeed>(
     () => (wantRaw ? feeds.rawFeed(series, raceId) : null),
-    () => (active?.live && wantRaw ? 30_000 : null),
+    () => (active?.live && wantRaw ? 60_000 : null),
   );
   const rawByCar = $derived(new Map((raw.feed.data?.Results ?? []).map((r) => [r.Number, r])));
+  // Fuel and tire windows only mean something while the race is running.
+  const rawRun = $derived(active?.live && mode === 'race' ? raw.feed.data?.RunData?.[0] : undefined);
 
   function canOpen(ins: CarInsight | undefined): ins is CarInsight {
     return !!ins && (ins.stints.length > 0 || !!ins.stats || ins.restarts.length > 0);
@@ -139,7 +143,13 @@
               <th class="r">Last lap</th>
               <th class="r wide" title="Average of the last 5 green-flag laps">Pace</th>
               <th class="r wide">Led</th>
-              <th class="r wide" title="Laps on the current tires">Tires</th>
+              {#if rawRun}
+                <th class="r wide" title="Laps of fuel and tire life left, from NASCAR's fuel and tire windows for this track">
+                  Fuel · Tires
+                </th>
+              {:else}
+                <th class="r wide" title="Laps on the current tires">Tires</th>
+              {/if}
             {:else if mode === 'timed'}
               <th class="r">Best lap</th>
               <th class="r wide">mph</th>
@@ -213,6 +223,8 @@
                 <td class="r wide">
                   {#if ins?.onPitRoad}
                     <span class="muted">Pitting</span>
+                  {:else if rawRun && rawByCar.get(r.car)}
+                    <FuelTires run={rawRun} car={rawByCar.get(r.car)!} />
                   {:else if ins?.tire}
                     {ins.tire.laps} {ins.tire.laps === 1 ? 'lap' : 'laps'}
                     {#if !ins.tire.fromStart}<span class="sub">{tireNote(ins.tire)}</span>{/if}

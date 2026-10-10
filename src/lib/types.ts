@@ -248,7 +248,21 @@ export interface ClipItem {
 
 /** NASCAR's "raw feed" (racing-insights): one row per car with ~120 running stats. Only the fields we show. */
 export interface RawFeed {
+  RunData: RawRun[];
   Results: RawResult[];
+}
+
+/** Race-level fields; the fuel and tire windows (in green-flag laps) are NASCAR's per-track estimates. */
+export interface RawRun {
+  LapsToGo: number;
+  FuelMax: number;
+  TireMax: number;
+  FuelYellowLaps: number;
+  FuelRedLaps: number;
+  TireYellowLaps: number;
+  TireRedLaps: number;
+  PitWindowMin: number;
+  PitWindowMax: number;
 }
 
 export interface RawResult {
@@ -264,6 +278,9 @@ export interface RawResult {
   TotalPitStops: number | null;
   LastStopTireCount: number | null;
   LastStopCompLap: number | null;
+  GreenFlagLapsSincePit: number | null;
+  YellowFlagLapsSincePit: number | null;
+  GreenFlagLapsSinceLast4TirePit: number | null;
   LastStopTime: number | null;
   LastStopRollingTime: number | null;
   LapsInTop5: number | null;
