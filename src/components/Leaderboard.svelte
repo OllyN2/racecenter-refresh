@@ -5,7 +5,7 @@
   import type { CarInsight, RaceInsights } from '../lib/insights';
   import type { BoardSource, LeaderboardRow } from '../lib/normalize';
   import { useFeed } from '../lib/poll.svelte';
-  import type { RawFeed } from '../lib/types';
+  import type { RawFeed, TireFuelStatus } from '../lib/types';
   import CarNumber from './CarNumber.svelte';
   import DriverDetail from './DriverDetail.svelte';
   import DriverName from './DriverName.svelte';
@@ -81,20 +81,35 @@
 
   let open = $state<string | null>(null);
 
-  // NASCAR's raw feed (~130 KB): fuel and tire windows for the live table, plus pit, running and crew details for
-  // the panel. Live races load it up front; otherwise it waits for the first opened panel. It changes about
-  // once a minute, so that's how often it's polled.
+  // NASCAR's raw feed (~130 KB) carries pit, running and crew details for the panel. It loads on the first opened
+  // panel and then stays, refreshing about as often as it changes (once a minute) while live.
   let wantRaw = $state(false);
   $effect(() => {
-    if (open || (active?.live && mode === 'race')) wantRaw = true;
+    if (open) wantRaw = true;
   });
   const raw = useFeed<RawFeed>(
     () => (wantRaw ? feeds.rawFeed(series, raceId) : null),
     () => (active?.live && wantRaw ? 60_000 : null),
   );
   const rawByCar = $derived(new Map((raw.feed.data?.Results ?? []).map((r) => [r.Number, r])));
-  // Fuel and tire windows only mean something while the race is running.
-  const rawRun = $derived(active?.live && mode === 'race' ? raw.feed.data?.RunData?.[0] : undefined);
+
+  // NASCAR's own tire and fuel status (8 KB) for the running race.
+  const liveRace = $derived(!!active?.live && mode === 'race');
+  const tireFuel = useFeed<TireFuelStatus[]>(
+    () => (liveRace ? feeds.tireFuel(series) : null),
+    () => (liveRace ? 15_000 : null),
+  );
+  // The file has no race id and holds the series' previous race until this one updates it, so only trust it when
+  // its cars are this field and nobody was fuelled after the current lap.
+  const tireFuelByCar = $derived.by(() => {
+    const list = tireFuel.feed.data;
+    if (!liveRace || !list?.length) return null;
+    const cars = new Set(rows.map((r) => r.car));
+    const lap = Math.max(0, ...rows.map((r) => r.laps ?? 0));
+    const ours = list.filter((s) => cars.has(s.Number)).length / list.length;
+    const current = list.filter((s) => s.Fueled <= lap + 1).length / list.length;
+    return ours >= 0.8 && current >= 0.8 ? new Map(list.map((s) => [s.Number, s])) : null;
+  });
 
   function canOpen(ins: CarInsight | undefined): ins is CarInsight {
     return !!ins && (ins.stints.length > 0 || !!ins.stats || ins.restarts.length > 0);
@@ -143,10 +158,8 @@
               <th class="r">Last lap</th>
               <th class="r wide" title="Average of the last 5 green-flag laps">Pace</th>
               <th class="r wide">Led</th>
-              {#if rawRun}
-                <th class="r wide" title="Laps of fuel and tire life left, from NASCAR's fuel and tire windows for this track">
-                  Fuel · Tires
-                </th>
+              {#if tireFuelByCar}
+                <th class="r wide" title="NASCAR's tire and fuel status: share of fuel and tire life left">Fuel · Tires</th>
               {:else}
                 <th class="r wide" title="Laps on the current tires">Tires</th>
               {/if}
@@ -223,8 +236,8 @@
                 <td class="r wide">
                   {#if ins?.onPitRoad}
                     <span class="muted">Pitting</span>
-                  {:else if rawRun && rawByCar.get(r.car)}
-                    <FuelTires run={rawRun} car={rawByCar.get(r.car)!} />
+                  {:else if tireFuelByCar?.get(r.car)}
+                    <FuelTires status={tireFuelByCar.get(r.car)!} />
                   {:else if ins?.tire}
                     {ins.tire.laps} {ins.tire.laps === 1 ? 'lap' : 'laps'}
                     {#if !ins.tire.fromStart}<span class="sub">{tireNote(ins.tire)}</span>{/if}

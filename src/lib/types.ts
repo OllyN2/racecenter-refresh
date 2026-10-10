@@ -248,21 +248,7 @@ export interface ClipItem {
 
 /** NASCAR's "raw feed" (racing-insights): one row per car with ~120 running stats. Only the fields we show. */
 export interface RawFeed {
-  RunData: RawRun[];
   Results: RawResult[];
-}
-
-/** Race-level fields; the fuel and tire windows (in green-flag laps) are NASCAR's per-track estimates. */
-export interface RawRun {
-  LapsToGo: number;
-  FuelMax: number;
-  TireMax: number;
-  FuelYellowLaps: number;
-  FuelRedLaps: number;
-  TireYellowLaps: number;
-  TireRedLaps: number;
-  PitWindowMin: number;
-  PitWindowMax: number;
 }
 
 export interface RawResult {
@@ -278,9 +264,6 @@ export interface RawResult {
   TotalPitStops: number | null;
   LastStopTireCount: number | null;
   LastStopCompLap: number | null;
-  GreenFlagLapsSincePit: number | null;
-  YellowFlagLapsSincePit: number | null;
-  GreenFlagLapsSinceLast4TirePit: number | null;
   LastStopTime: number | null;
   LastStopRollingTime: number | null;
   LapsInTop5: number | null;
@@ -319,4 +302,23 @@ export interface LiveFlag {
 export interface RaceNotesFeed {
   raceID: number;
   summary: { noteID: string; section: string; content: string; lap: string | number; flag: number }[];
+}
+
+/**
+ * racinginsights tire and fuel status: NASCAR's own per-car estimate, one file per series. It has no race id and
+ * keeps the last race's numbers until the next race in that series starts.
+ */
+export interface TireFuelStatus {
+  RunningPos: number;
+  Number: string;
+  FullName: string;
+  TireColor: 'Green' | 'Yellow' | 'Red' | string;
+  LeftsChanged: number;
+  RightsChanged: number;
+  LapsSinceTiresChanged: number;
+  TirePctRemain: number;
+  FuelColor: 'Green' | 'Yellow' | 'Red' | string;
+  Fueled: number;
+  LapsSinceFuel: number;
+  FuelPctRemain: number;
 }
