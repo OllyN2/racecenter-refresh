@@ -161,8 +161,9 @@ positions, car telemetry and a faster leaderboard. The site uses it only with a 
 tab, which is the GPS map alone and asks for the token first. These two channels are all nascar.com attaches. Ably doesn't compress the socket (no `permessage-deflate`).
 
 - Channel `vehicle{number}` (✓ used; the live feed's `vehicle_number`) pushes one car's `VehicleData` about every
-  1.7 s in a race. The Track tab attaches every running car, and an open driver panel attaches that one car. Messages
-  for another `raceID` are dropped. Measured over 138k messages of the 2026-10-11 Cup race:
+  1.7 s in a race. The Track tab attaches only the cars it shows (all, top 10, lead lap, Chase, or picked positions
+  and drivers): a full field of 35 was ~23 messages and ~870 KB a minute, the top 10 ~190 KB. An open driver panel
+  attaches its one car. Messages for another `raceID` are dropped. Measured over 138k messages of the 2026-10-11 Cup race:
   - `location` [lat, lon] and `locationTimestamp` (ms, on whole tenths of a second) are the fix. The GPS is clean:
     the distance between fixes matches the reported speed to ±2% and their direction matches `Heading` to a few
     degrees. But a fix is 0.9–3 s old when it arrives (median 2 s), and ~1% of messages repeat an old fix or
