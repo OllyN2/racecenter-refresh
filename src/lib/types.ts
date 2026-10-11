@@ -358,3 +358,35 @@ export interface ManufacturerPoints {
   wins: number;
   delta_leader: string | number;
 }
+
+/**
+ * NASCAR's leaderboard push on the Ably `VehicleEntryList` channel (viewers with a token), every 15 s, trimmed to
+ * what's laid over the live feed. Times in seconds.
+ */
+export interface EntryList {
+  /** Local time it arrived (ms). */
+  at: number;
+  race_id: number;
+  /** Race clock. */
+  elapsed: number | null;
+  laps_to_go: number | null;
+  flag_state: number | null;
+  cautions: number | null;
+  caution_laps: number | null;
+  lead_changes: number | null;
+  cars: EntryListCar[];
+}
+
+export interface EntryListCar {
+  car: string;
+  pos: number;
+  laps: number;
+  last_time: number;
+  last_speed: number;
+  best_time: number;
+  best_speed: number;
+  laps_down: number;
+  /** Behind the leader, on the lead lap. */
+  gap: number;
+  on_track: boolean | null;
+}

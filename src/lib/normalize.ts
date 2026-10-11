@@ -1,6 +1,7 @@
 import { gap, parseDriver, parseTimestamp, parseUtc, type DriverName } from './format';
 import type {
   ClipFeed,
+  EntryList,
   LapNote,
   LapNotes,
   LapTimes,
@@ -58,6 +59,54 @@ const FLAG_INACTIVE = 9;
 export function isSessionActive(live: LiveFeed, now = Date.now()): boolean {
   const t = parseTimestamp(live.time_of_day_os);
   return Number.isFinite(t) && now - t < LIVE_STALE_MS && live.flag_state !== FLAG_INACTIVE;
+}
+
+/**
+ * Lays NASCAR's leaderboard push (viewers with a token) over the live feed. It runs 20–30 s ahead of the feed and
+ * shows pit road about 35 s sooner, but has no names, pit stops or laps-led ranges, so it supplies only the running
+ * order, laps, lap times, gaps, pit road and the race's flag and counts. It's used only when it's at least as far
+ * along as the feed for every car, so the order never mixes the two.
+ */
+export function withEntryList(live: LiveFeed, board: EntryList | null): LiveFeed {
+  if (!board || board.race_id !== live.race_id) return live;
+  const byCar = new Map(board.cars.map((c) => [c.car, c]));
+  let leader = 0;
+  for (const v of live.vehicles) {
+    const c = byCar.get(v.vehicle_number);
+    if (!c || c.laps < v.laps_completed) return live;
+    leader = Math.max(leader, c.laps);
+  }
+  return {
+    ...live,
+    lap_number: Math.max(live.lap_number, leader),
+    laps_to_go: board.laps_to_go ?? live.laps_to_go,
+    flag_state: board.flag_state ?? live.flag_state,
+    elapsed_time: board.elapsed != null ? Math.max(live.elapsed_time, Math.floor(board.elapsed)) : live.elapsed_time,
+    time_of_day_os: new Date(board.at).toISOString(),
+    number_of_caution_segments: board.cautions ?? live.number_of_caution_segments,
+    number_of_caution_laps: board.caution_laps ?? live.number_of_caution_laps,
+    number_of_lead_changes: board.lead_changes ?? live.number_of_lead_changes,
+    vehicles: live.vehicles.map((v) => {
+      const c = byCar.get(v.vehicle_number)!;
+      // Before the green its lap time is the pace laps'.
+      if (!c.laps) return { ...v, running_position: c.pos, is_on_track: c.on_track ?? v.is_on_track };
+      const improved = c.best_time > 0 && (!v.best_lap_time || c.best_time < v.best_lap_time);
+      return {
+        ...v,
+        running_position: c.pos,
+        laps_completed: c.laps,
+        // Race clock at the line: a lap time for each lap the feed hasn't seen yet (almost always one).
+        vehicle_elapsed_time: v.vehicle_elapsed_time + (c.laps - v.laps_completed) * c.last_time,
+        last_lap_time: c.last_time || v.last_lap_time,
+        last_lap_speed: c.last_speed || v.last_lap_speed,
+        best_lap_time: improved ? c.best_time : v.best_lap_time,
+        best_lap_speed: improved ? c.best_speed : v.best_lap_speed,
+        best_lap: improved ? (c.last_time === c.best_time ? c.laps : 0) : v.best_lap,
+        delta: c.laps_down > 0 ? -c.laps_down : c.gap,
+        is_on_track: c.on_track ?? v.is_on_track,
+      };
+    }),
+  };
 }
 
 /** Ranges start at lap 0 for whoever led the field to green; only completed laps count as led. */

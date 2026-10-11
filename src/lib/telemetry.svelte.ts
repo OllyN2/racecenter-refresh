@@ -1,7 +1,10 @@
 // NASCAR's live car GPS and telemetry, streamed over Ably to nascar.com. Ably only issues tokens to nascar.com, so
 // the viewer brings one from their own visit there; it never leaves this browser except to go to Ably.
-// This is a minimal client for Ably's JSON WebSocket protocol: connect, attach `vehicle{number}` channels, read
-// messages. It's closed while the tab is hidden and whenever nothing on screen wants live data.
+// This is a minimal client for Ably's JSON WebSocket protocol: connect, attach `vehicle{number}` channels and
+// `VehicleEntryList` (NASCAR's leaderboard push), read messages. It's closed while the tab is hidden and whenever
+// nothing on screen wants live data.
+
+import type { EntryList, EntryListCar } from './types';
 
 export interface CarTelemetry {
   lat: number;
@@ -28,6 +31,7 @@ const TOKEN_LIFE = 3600_000;
 // Ably protocol actions.
 const CONNECTED = 4, DISCONNECTED = 6, ERROR = 9, ATTACH = 10, DETACH = 12, DETACHED = 13, MESSAGE = 15;
 const BOUNCE = 22, BOUNCED = 23; // heartbeats=bounce: echo the id back
+const BOARD = 'VehicleEntryList';
 
 interface Stored {
   token: string;
@@ -75,6 +79,26 @@ const num = (v: unknown): number | null => {
   return Number.isFinite(n) ? n : null;
 };
 
+/** The parts of a `VehicleEntryList` message that are used (times in ms). */
+interface RawEntryList {
+  et?: number;
+  run?: { race_uid?: number; laps_rem?: number };
+  flgs?: { flg?: number }[];
+  riRun?: { Cautions?: number; CautionLaps?: number; LeadChanges?: number };
+  results?: {
+    no?: string;
+    ps?: number;
+    lap?: number;
+    lap_tm?: number;
+    spd?: number;
+    best_tm?: number;
+    best_spd?: number;
+    delta_tm?: number;
+    delta_lap?: number;
+    riData?: { IsOnTrack?: number };
+  }[];
+}
+
 class Telemetry {
   status = $state<TelemetryStatus>('off');
   hasToken = $state(false);
@@ -82,6 +106,8 @@ class Telemetry {
   problem = $state('');
   expires = $state<number | null>(null);
   cars = $state.raw<ReadonlyMap<string, CarTelemetry>>(new Map());
+  /** The latest leaderboard push for the live race, while connected. */
+  board = $state.raw<EntryList | null>(null);
   /** Typical gap between messages for one car (ms), so dots can glide between fixes. */
   interval = $state(1000);
 
@@ -89,6 +115,8 @@ class Telemetry {
   #raceId: number | null = null;
   #ws: WebSocket | null = null;
   #wants = new Set<Set<string>>();
+  #boardWants = 0;
+  /** Channel names. */
   #attached = new Set<string>();
   #pending = new Map<string, CarTelemetry>();
   #flush = 0;
@@ -148,6 +176,7 @@ class Telemetry {
     if (id === this.#raceId) return;
     this.#raceId = id;
     this.cars = new Map();
+    this.board = null;
     this.#queue();
   }
 
@@ -158,6 +187,16 @@ class Telemetry {
     this.#queue();
     return () => {
       this.#wants.delete(set);
+      this.#queue();
+    };
+  }
+
+  /** Ask for NASCAR's leaderboard push (`board`) while the caller is on screen. Returns the function that stops it. */
+  wantBoard(): () => void {
+    this.#boardWants++;
+    this.#queue();
+    return () => {
+      this.#boardWants--;
       this.#queue();
     };
   }
@@ -196,10 +235,12 @@ class Telemetry {
     });
   }
 
+  /** Channel names. */
   #desired(): Set<string> {
     const all = new Set<string>();
     if (this.#raceId == null) return all;
-    for (const s of this.#wants) for (const c of s) all.add(c);
+    if (this.#boardWants > 0) all.add(BOARD);
+    for (const s of this.#wants) for (const c of s) all.add(`vehicle${c}`);
     return all;
   }
 
@@ -216,8 +257,16 @@ class Telemetry {
       return;
     }
     if (this.status !== 'live') return;
-    for (const c of want) if (!this.#attached.has(c)) this.#send({ action: ATTACH, channel: `vehicle${c}` });
-    for (const c of this.#attached) if (!want.has(c)) this.#send({ action: DETACH, channel: `vehicle${c}` });
+    for (const c of want) {
+      // rewind=1: Ably sends the last leaderboard straight away rather than at the next push, up to 15 s later.
+      if (!this.#attached.has(c)) this.#send({ action: ATTACH, channel: c, ...(c === BOARD && { params: { rewind: '1' } }) });
+    }
+    for (const c of this.#attached) {
+      if (!want.has(c)) {
+        this.#send({ action: DETACH, channel: c });
+        if (c === BOARD) this.board = null;
+      }
+    }
     this.#attached = new Set(want);
   }
 
@@ -261,6 +310,7 @@ class Telemetry {
       }
     }
     if (this.status === 'live' || this.status === 'connecting') this.status = 'off';
+    this.board = null;
   }
 
   #send(msg: object) {
@@ -291,21 +341,67 @@ class Telemetry {
         this.#send({ action: BOUNCED, id: p.id });
         break;
       case MESSAGE:
-        if (p.channel?.startsWith('vehicle')) for (const m of p.messages ?? []) this.#vehicle(p.channel.slice(7), m);
+        if (p.channel === BOARD) for (const m of p.messages ?? []) this.#board(m);
+        else if (p.channel?.startsWith('vehicle')) for (const m of p.messages ?? []) this.#vehicle(p.channel.slice(7), m);
         break;
       case DETACHED:
-        if (p.channel) this.#attached.delete(p.channel.slice(7));
+        if (p.channel) this.#attached.delete(p.channel);
         break;
       case ERROR:
       case DISCONNECTED: {
         const code = p.error?.code ?? 0;
         // 401xx: the token expired, was revoked or isn't valid for this.
         if (code >= 40100 && code < 40200) this.#expire(code === 40142 ? 'Your NASCAR token expired.' : "NASCAR's live data didn't accept that token.");
-        else if (p.channel) this.#attached.delete(p.channel.slice(7));
+        else if (p.channel) this.#attached.delete(p.channel);
         else if (p.error?.message) this.problem = p.error.message;
         break;
       }
     }
+  }
+
+  #board(m: { data?: unknown; encoding?: string }) {
+    let d: RawEntryList;
+    try {
+      d = decode(m) as RawEntryList;
+    } catch {
+      return;
+    }
+    const race = num(d?.run?.race_uid);
+    if (race == null || race !== this.#raceId || !Array.isArray(d.results)) return;
+    const cars: EntryListCar[] = [];
+    for (const r of d.results) {
+      const pos = num(r.ps);
+      const laps = num(r.lap);
+      if (typeof r.no !== 'string' || pos == null || laps == null) continue;
+      const onTrack = num(r.riData?.IsOnTrack);
+      cars.push({
+        car: r.no,
+        pos,
+        laps,
+        last_time: (num(r.lap_tm) ?? 0) / 1000,
+        last_speed: num(r.spd) ?? 0,
+        best_time: (num(r.best_tm) ?? 0) / 1000,
+        best_speed: num(r.best_spd) ?? 0,
+        laps_down: num(r.delta_lap) ?? 0,
+        gap: (num(r.delta_tm) ?? 0) / 1000,
+        on_track: onTrack == null ? null : onTrack !== 0,
+      });
+    }
+    // Now and then a push catches the order mid-update, with two cars in one place; keep the last good one.
+    const order = new Set(cars.map((c) => c.pos));
+    if (order.size !== cars.length || !cars.every((c) => c.pos >= 1 && c.pos <= cars.length)) return;
+    const et = num(d.et);
+    this.board = {
+      at: Date.now(),
+      race_id: race,
+      elapsed: et == null ? null : et / 1000,
+      laps_to_go: num(d.run?.laps_rem),
+      flag_state: num(d.flgs?.at(-1)?.flg),
+      cautions: num(d.riRun?.Cautions),
+      caution_laps: num(d.riRun?.CautionLaps),
+      lead_changes: num(d.riRun?.LeadChanges),
+      cars,
+    };
   }
 
   #vehicle(car: string, m: { data?: unknown; encoding?: string }) {

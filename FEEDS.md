@@ -4,7 +4,9 @@ Every NASCAR data feed we know of, what it holds, and whether this site uses it.
 
 - **web**: NASCAR's racecenter page (`www.nascar.com/live-results/...`), from recording its network traffic during a
   live race (Charlotte trucks, race 5688, 2026-10-09) and reading
-  `ndms_race_widgets/asset/js/racecenter-scripts.min.js`.
+  `ndms_race_widgets/asset/js/racecenter-scripts.min.js`. Checked again against a full network capture (HAR) of the
+  leaderboard and racecenter around the green flag of the Charlotte Cup race (5629, 2026-10-11), including its Ably
+  WebSocket frames: every data request in it is listed here.
 - **app**: the mobile app's config, `https://cf.nascar.com/mobile-cms/general/debug/config.json` (68 KB, its `Feeds`
   section).
 - **probe**: found or checked by requesting URLs directly.
@@ -25,6 +27,10 @@ Sizes are from the 2026-10-09 Charlotte truck race.
   feed every ~60 s. Pit data, flags, notes and clips changed only when something happened. Measured by polling every
   2 s for 150 s.
 - The site polls the live feed every 5 s (mostly cheap 304s) and shows the data's own timestamp in the header.
+  With a viewer's token, a live race also takes NASCAR's Ably leaderboard push, which runs 20–30 s ahead (see
+  [below](#live-gps-and-telemetry-viewers-own-token)).
+- nascar.com itself polls the live feed and race-note votes every 10 s, lap times every 14 s, the raw feed and
+  `runs.json` every 15 s, and live-ops every 5 s (it never changed during the capture).
 
 **Used** column: ✓ always, *live* only during a race, *panel* only when a driver's details are open, *fallback* when
 the preferred feed is missing, *build* read by `npm run tracks` into `public/tracks/`.
@@ -132,7 +138,7 @@ and the other endpoints on `feed.racinginsights.com` found nothing else.
 | `cf/data/images/carbadges/{S}/{number}.png` | 1–5 KB each | ✓ | web, probe | Car number artwork, 78×70. A missing number returns 403. |
 | `cf/data/images/makes/{make}.png` | | | web | Make logos. The site bundles its own copies instead. |
 | `downforce.nascar.com/output/7/prod/{clipId}/mp4/*.mp4` | ~6 MB/min | ✓ | web | Clip files from the SnappyTV feed. No cookies, supports range requests. |
-| `cf/config/audio/audio_mapping_{S}_3.json` | ~9 KB | ✓ live | web, app | 40 scanner streams (HLS on `sa.aws.nascar.com`): All Scan, every driver, officials, NRN. Only NRN radio has `requiresAuth: false`; it's the site's NRN radio button. |
+| `cf/config/audio/audio_mapping_{S}_3.json` | ~9 KB | ✓ live | web, app | 40 scanner streams (HLS on `sa.aws.nascar.com/driveaudio3/stream_{n}.m3u8`, 2 s AAC segments): All Scan, every driver, officials, NRN. Only NRN radio has `requiresAuth: false`; it's the site's NRN radio button. |
 | Video streams in live-ops (`dw9ptu32blt7h.cloudfront.net/...m3u8`, `live.nascar.com/presspass01/master.m3u8`, `mrn.streamguys1.com/...`) | | | web | Hero player and Press Pass streams and the MRN radio stream named in live-ops. Not checked further. |
 
 ## Site and app configuration
@@ -151,14 +157,25 @@ and the other endpoints on `feed.racinginsights.com` found nothing else.
 ## Live GPS and telemetry (viewer's own token)
 
 **Ably realtime** (`wss://main.realtime.ably.net`, JSON protocol `v=6`, `heartbeats=bounce`) carries NASCAR's GPS
-positions and car telemetry. The site uses it only when the viewer pastes a token on the Track tab.
+positions, car telemetry and a faster leaderboard. The site uses it only when the viewer pastes a token on the Track
+tab. These two channels are all nascar.com attaches. Ably doesn't compress the socket (no `permessage-deflate`).
 
-- Channel `vehicle{number}` (✓ used) pushes one car's `location` [lat, lon], `mph`, `nGear`, `Throttle Position`
-  (0–100), `Brake Pressure` (nascar.com shows it as a percentage of 250), `Engine Speed` and `aSteering`, along with
-  `raceID`. The sample in `dots.json` runs at about 1 message per car per second. The Track tab attaches every
-  running car, and an open driver panel attaches that one car. Messages for another `raceID` are dropped.
-- Channel `VehicleEntryList` pushes a leaderboard snapshot about every 15 s, in the same shape as
-  `raceSessionResults/{S}/{R}/race/results.json`. Not used.
+- Channel `vehicle{number}` (✓ used; the live feed's `vehicle_number`) pushes one car's `location` [lat, lon], `mph`,
+  `nGear`, `Throttle Position` (0–100), `Brake Pressure` (nascar.com shows it as a percentage of 250),
+  `Engine Speed`, `aSteering`, `Heading`, `leadLap` and `raceID`, about every 1.5 s per car in a race. The Track tab
+  attaches every running car, and an open driver panel attaches that one car. Messages for another `raceID` are
+  dropped.
+- Channel `VehicleEntryList` (✓ live) pushes a leaderboard snapshot every 15 s (~20 KB, so ~5 MB an hour), in the same
+  shape as `raceSessionResults/{S}/{R}/race/results.json`. Per car: `no`, `ps` (position), `lap` (laps completed),
+  `lap_tm`/`best_tm` (ms), `spd`/`best_spd`, `delta_tm` (ms behind the leader) and `delta_lap` (laps down),
+  `status_id`, and `riData` (`IsOnTrack`, `LapsSinceLastPit`, `LapsLed`, `PointsThisRace`, …). Per race: `et` (race
+  clock, ms), `run.laps_rem`, `flgs` (every flag with its lap), and `riRun` (cautions, caution laps, lead changes,
+  stage ends). On the 2026-10-11 Cup race every field matched the live feed's exactly at the same lap, and it was
+  20–28 s ahead of the live feed (median, per car-lap; never behind) and showed pit road ~37 s sooner. It has no names,
+  pit stops or laps-led ranges, so a live race lays it over the live feed (`withEntryList`) whenever a page with a
+  live race is open and a token is set. About 1 push in 35 puts two cars in one position mid-update; those are
+  skipped. Attaching with `params: {rewind: "1"}` sends the latest push at once. nascar.com instead reads it on load
+  from the REST history, `main.realtime.ably.net/channels/VehicleEntryList/messages?envelope=json` (the last 9).
 - **Tokens** come from `f2akd1igr7.execute-api.us-east-1.amazonaws.com/Prod?nlbwa=1`, which answers only
   `www.nascar.com` (other origins get a 502). It returns ready-made TokenDetails: `token`, `keyName`, `issued`,
   `expires` (1 hour), and `capability` `{"[*]*":["history","presence","subscribe"]}`. The site never asks for a token
@@ -178,7 +195,9 @@ positions and car telemetry. The site uses it only when the viewer pastes a toke
 - **Sportvision RaceView stream**: `wss://test.nascardatalive.com/raceviewweb` (app) no longer resolves. The staging
   `ws://dev.nascardatalive.com:5002/racefeed` is unencrypted, which browsers block on HTTPS pages.
 - **NASCAR Drive** (`cf/drive/{S}/configs-ng.json`): needs CloudFront signed cookies.
-- **Scanner channels** with `requiresAuth: true`: need a NASCAR subscription.
+- **Scanner channels** with `requiresAuth: true` (every driver, officials, All Scan): nascar.com plays them only for
+  signed-in visitors, so the site leaves them out.
+- **Ad slots**: `www.nascar.com/adunit/{id}/` (web) is JSON for nascar.com's ads.
 - **Betting odds**: `cf/cacher/{Y}/{S}/{R}/winner-odds.json` (app) returns 403, and
   `fantasygames.nascar.com/api/static-v1/live/odds/race/{R}.json` (app) returns 404.
 - **`www.nascar.com/json/...`**: `json/schedule/?season={Y}` (web) and `json/playoff_standings_drivers/?wid={S}` (app)

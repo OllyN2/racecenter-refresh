@@ -247,7 +247,8 @@
           <p>
             NASCAR streams each car's GPS, speed, gear, RPM, throttle and brake to nascar.com, and only hands the
             access token to nascar.com. To see it here on a satellite map, use the token nascar.com gives your
-            browser. It lasts an hour and stays in this browser.
+            browser. It also keeps the leaderboard about 20 seconds fresher. It lasts an hour and stays in this
+            browser.
           </p>
           <ol>
             <li>Open <a href="https://www.nascar.com/" target="_blank" rel="noreferrer">nascar.com</a> in another tab, then its browser console (F12, then Console).</li>

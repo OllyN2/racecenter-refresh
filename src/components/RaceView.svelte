@@ -13,6 +13,7 @@
     raceStartMs,
     resultRows,
     runRows,
+    withEntryList,
     type BoardSource,
   } from '../lib/normalize';
   import { useFeed } from '../lib/poll.svelte';
@@ -39,7 +40,7 @@
 
   let {
     race,
-    live,
+    live: feedLive,
     snapshot,
     liveUpdatedAt,
     tab,
@@ -60,6 +61,8 @@
     return 12742 * Math.asin(Math.sqrt(a));
   }
 
+  // With the viewer's NASCAR token, a live race also gets NASCAR's leaderboard push, 20–30 s ahead of the feed.
+  const live = $derived(feedLive?.run_type === 3 ? withEntryList(feedLive, telemetry.board) : feedLive);
   const isLive = $derived(!!live);
   const year = $derived(race.race_season);
 
@@ -74,6 +77,7 @@
   // Live GPS and telemetry only stream during the race.
   const liveRaceId = $derived(raceLive?.race_id ?? null);
   $effect(() => telemetry.setRace(liveRaceId));
+  $effect(() => (liveRaceId != null ? telemetry.wantBoard() : undefined));
 
   // Cautions for the header's lap bar and the Stages tab. The weekend feed only lists them after the race, so
   // until it does they come from live-flag-data (<1 KB).
