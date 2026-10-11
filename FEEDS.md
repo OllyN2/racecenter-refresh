@@ -187,8 +187,8 @@ tab. These two channels are all nascar.com attaches. Ably doesn't compress the s
   same imagery nascar.com's map can use. It's a JPEG of ~15 KB per 256 px tile, and about 12 tiles frame a track.
   Cars are placed straight from GPS with web-mercator maths. There's no map library and no fitting; on the Phoenix
   sample every fix lands on the racing surface. The map opens on a box a quarter lap each way from the track center
-  (Charlotte's center is 36 m from the middle of its GPS fixes) and never moves on its own; the viewer pans and
-  zooms, and tiles load for the level in view. `layouts.json` has per-track GPS bounds, but 11 of 35 don't contain
+  (Charlotte's center is 36 m from the middle of its GPS fixes) and never moves on its own; the viewer pans,
+  zooms and rotates it, and tiles load for the level in view. `layouts.json` has per-track GPS bounds, but 11 of 35 don't contain
   their track's center (Texas has Darlington's) and Charlotte's cut off the east end by 20 m, so they aren't used.
   Attribution: Esri, Maxar, Earthstar Geographics.
 

@@ -10,8 +10,8 @@
   import type { Snippet } from 'svelte';
 
   // Cars placed straight from GPS on satellite imagery, like nascar.com's own map: plain web-mercator maths over
-  // Esri World Imagery tiles, no map library. It opens framed on the track and never moves on its own; the viewer
-  // drags to pan and scrolls, pinches or uses the buttons to zoom. Only shown while live GPS is streaming.
+  // Esri World Imagery tiles, no map library. It opens framed on the track, north up, and never moves on its own;
+  // the viewer pans, zooms and rotates it. Only shown while live GPS is streaming.
   let {
     cars,
     center,
@@ -41,12 +41,21 @@
   /** Esri's imagery stops at 19; the last zoom level enlarges it. */
   const TILE_MAX = 19;
   const ZOOM_MAX = 20;
+  const deg = (a: number) => (a * 180) / Math.PI;
+  /** The rotate buttons and keys turn by 15°. */
+  const STEP = Math.PI / 12;
+  /** A turn that ends within 5° of north snaps to it. */
+  const SNAP = Math.PI / 36;
+  /** Two fingers only start rotating after a 10° twist, so pinching to zoom doesn't tilt the map. */
+  const TWIST = Math.PI / 18;
 
-  /** The world point in the middle of the map, and the zoom level (fractional). */
+  /** The world point in the middle of the map, the zoom level (fractional), and how far the map is turned
+   *  clockwise (radians). */
   interface View {
     x: number;
     y: number;
     z: number;
+    a: number;
   }
 
   let width = $state(0);
@@ -59,7 +68,8 @@
   function homeView(c: [number, number]): View {
     const r = Math.min(1500, Math.max(250, trackLength * 1609.34 * 0.25));
     const metresPerUnit = (40_075_017 * Math.cos((c[0] * Math.PI) / 180)) / 256;
-    return { x: worldX(c[1]), y: worldY(c[0]), z: Math.log2(Math.min(width, height) / ((2 * r) / metresPerUnit)) };
+    const z = Math.log2(Math.min(width, height) / ((2 * r) / metresPerUnit));
+    return { x: worldX(c[1]), y: worldY(c[0]), z, a: 0 };
   }
 
   $effect(() => {
@@ -71,7 +81,13 @@
     view = home;
   });
 
-  // ---- Pan and zoom ----
+  // ---- Pan, zoom and rotate ----
+
+  /** Turns (x, y) clockwise on screen by `a`. */
+  const turn = (x: number, y: number, a: number): [number, number] => [
+    x * Math.cos(a) - y * Math.sin(a),
+    x * Math.sin(a) + y * Math.cos(a),
+  ];
 
   let moving = $state(false);
   let settle = 0;
@@ -80,28 +96,37 @@
     const z = Math.max(home.z - 2, Math.min(ZOOM_MAX, v.z));
     // Keep within a view or so of the track, so it can't get lost.
     const reach = (1.5 * Math.max(width, height)) / 2 ** home.z;
+    let a = Math.atan2(Math.sin(v.a), Math.cos(v.a));
+    if (Math.abs(a) < 1e-6) a = 0;
     view = {
       x: Math.max(home.x - reach, Math.min(home.x + reach, v.x)),
       y: Math.max(home.y - reach, Math.min(home.y + reach, v.y)),
       z,
+      a,
     };
     // Dots glide between GPS fixes; while the map moves they must jump with it.
     moving = true;
     clearTimeout(settle);
     settle = window.setTimeout(() => (moving = false), 150);
   }
-  /** Zooms by `dz` levels, keeping the point at (px, py) still. */
-  function zoomAt(dz: number, px = width / 2, py = height / 2) {
-    if (!view) return;
-    const k0 = 2 ** view.z;
-    const k1 = 2 ** Math.max((home?.z ?? 0) - 2, Math.min(ZOOM_MAX, view.z + dz));
-    const ax = view.x + (px - width / 2) / k0;
-    const ay = view.y + (py - height / 2) / k0;
-    setView({ x: ax - (px - width / 2) / k1, y: ay - (py - height / 2) / k1, z: Math.log2(k1) });
+  /** Zooms by `dz` levels and turns by `da`, keeping the point at (px, py) still. */
+  function zoomAt(dz: number, px = width / 2, py = height / 2, da = 0) {
+    if (!view || !home) return;
+    const [ox, oy] = turn(px - width / 2, py - height / 2, -view.a);
+    const ax = view.x + ox / 2 ** view.z;
+    const ay = view.y + oy / 2 ** view.z;
+    const z = Math.max(home.z - 2, Math.min(ZOOM_MAX, view.z + dz));
+    const a = view.a + da;
+    const [nx, ny] = turn(px - width / 2, py - height / 2, -a);
+    setView({ x: ax - nx / 2 ** z, y: ay - ny / 2 ** z, z, a });
   }
   function panBy(dx: number, dy: number) {
-    if (view) setView({ x: view.x - dx / 2 ** view.z, y: view.y - dy / 2 ** view.z, z: view.z });
+    if (!view) return;
+    const [wx, wy] = turn(dx, dy, -view.a);
+    setView({ ...view, x: view.x - wx / 2 ** view.z, y: view.y - wy / 2 ** view.z });
   }
+  const rotate = (da: number) => zoomAt(0, width / 2, height / 2, da);
+  const north = () => view && rotate(-view.a);
   function reset() {
     const c = center ?? homeAt;
     if (!c) return;
@@ -114,14 +139,23 @@
     const b = svg!.getBoundingClientRect();
     return { x: e.clientX - b.left, y: e.clientY - b.top };
   };
+  const angle = (p: { x: number; y: number }, o: { x: number; y: number }) => Math.atan2(p.y - o.y, p.x - o.x);
 
-  // One pointer drags; two pinch. A press that moves only a few pixels is still a click on a car.
+  // One pointer drags (with Shift, rotates); two pinch and twist. A press that moves only a few pixels is still a
+  // click on a car.
   const pointers = new Map<number, { x: number; y: number }>();
   let dragged = false;
+  let shiftDrag = false;
+  let turned = false;
+  let twist = 0;
   function down(e: PointerEvent) {
     if (e.button !== 0) return;
     pointers.set(e.pointerId, at(e));
-    if (pointers.size === 1) dragged = false;
+    if (pointers.size === 1) {
+      dragged = turned = false;
+      shiftDrag = e.shiftKey;
+    }
+    twist = 0;
   }
   function move(e: PointerEvent) {
     const prev = pointers.get(e.pointerId);
@@ -131,19 +165,33 @@
       if (!dragged && Math.hypot(p.x - prev.x, p.y - prev.y) < 5) return;
       if (!dragged) svg!.setPointerCapture(e.pointerId);
       dragged = true;
-      panBy(p.x - prev.x, p.y - prev.y);
+      if (shiftDrag) {
+        const mid = { x: width / 2, y: height / 2 };
+        rotate(angle(p, mid) - angle(prev, mid));
+        turned = true;
+      } else {
+        panBy(p.x - prev.x, p.y - prev.y);
+      }
     } else {
       const other = [...pointers].find(([id]) => id !== e.pointerId)![1];
       const before = Math.hypot(prev.x - other.x, prev.y - other.y);
       const after = Math.hypot(p.x - other.x, p.y - other.y);
+      let da = angle(p, other) - angle(prev, other);
+      da = Math.atan2(Math.sin(da), Math.cos(da));
+      if (!turned) {
+        twist += da;
+        da = Math.abs(twist) > TWIST ? twist : 0;
+        turned = da !== 0;
+      }
       dragged = true;
       panBy((p.x - prev.x) / 2, (p.y - prev.y) / 2);
-      if (before > 0) zoomAt(Math.log2(after / before), (p.x + other.x) / 2, (p.y + other.y) / 2);
+      if (before > 0) zoomAt(Math.log2(after / before), (p.x + other.x) / 2, (p.y + other.y) / 2, da);
     }
     pointers.set(e.pointerId, p);
   }
   function up(e: PointerEvent) {
     pointers.delete(e.pointerId);
+    if (!pointers.size && turned && view && Math.abs(view.a) < SNAP) north();
   }
   // The click that ends a drag isn't a click on a car.
   function swallow(e: MouseEvent) {
@@ -153,16 +201,17 @@
   }
   function keys(e: KeyboardEvent) {
     const step = Math.min(width, height) / 4;
-    const act: Record<string, () => void> = {
-      ArrowLeft: () => panBy(step, 0),
-      ArrowRight: () => panBy(-step, 0),
-      ArrowUp: () => panBy(0, step),
-      ArrowDown: () => panBy(0, -step),
-      '+': () => zoomAt(1),
-      '=': () => zoomAt(1),
-      '-': () => zoomAt(-1),
-      '0': reset,
-    };
+    const act: Record<string, () => void> = e.shiftKey
+      ? { ArrowLeft: () => rotate(-STEP), ArrowRight: () => rotate(STEP) }
+      : {
+          ArrowLeft: () => panBy(step, 0),
+          ArrowRight: () => panBy(-step, 0),
+          ArrowUp: () => panBy(0, step),
+          ArrowDown: () => panBy(0, -step),
+          '0': reset,
+        };
+    act['+'] = act['='] = () => zoomAt(1);
+    act['-'] = () => zoomAt(-1);
     if (e.target !== svg || !act[e.key]) return;
     e.preventDefault();
     act[e.key]();
@@ -184,18 +233,29 @@
 
   // ---- Drawing ----
 
+  // Tiles are laid out north up and the layer is turned as a whole; cars are turned here, so their numbers stay
+  // upright.
   const scale = $derived(view ? 2 ** view.z : 1);
   const sx = (x: number) => (x - view!.x) * scale + width / 2;
   const sy = (y: number) => (y - view!.y) * scale + height / 2;
+  function place(x: number, y: number): [number, number] {
+    const [px, py] = turn((x - view!.x) * scale, (y - view!.y) * scale, view!.a);
+    return [px + width / 2, py + height / 2];
+  }
 
   function tiles(tz: number) {
     const per = 256 / 2 ** tz; // world units per tile
     const size = per * scale;
     const last = 2 ** tz - 1;
-    const x0 = Math.floor((view!.x - width / 2 / scale) / per);
-    const x1 = Math.floor((view!.x + width / 2 / scale) / per);
-    const y0 = Math.max(0, Math.floor((view!.y - height / 2 / scale) / per));
-    const y1 = Math.min(last, Math.floor((view!.y + height / 2 / scale) / per));
+    // What's on screen as a north-up box, which grows when the map is turned.
+    const cos = Math.abs(Math.cos(view!.a));
+    const sin = Math.abs(Math.sin(view!.a));
+    const hw = (width * cos + height * sin) / 2 / scale;
+    const hh = (width * sin + height * cos) / 2 / scale;
+    const x0 = Math.floor((view!.x - hw) / per);
+    const x1 = Math.floor((view!.x + hw) / per);
+    const y0 = Math.max(0, Math.floor((view!.y - hh) / per));
+    const y1 = Math.min(last, Math.floor((view!.y + hh) / per));
     const out: { key: string; url: string; x: number; y: number; size: number }[] = [];
     for (let ty = y0; ty <= y1; ty++) {
       for (let tx = x0; tx <= x1; tx++) {
@@ -212,6 +272,8 @@
     const under = home ? level(home.z) : tz;
     return (under < tz ? [under, tz] : [tz]).map((z) => ({ z, tiles: tiles(z) }));
   });
+  // Tile edges overlap a little so they don't show seams, a little more when turned (edges are smoothed).
+  const overlap = $derived(view?.a ? 1 : 0.5);
   const r = $derived(Math.max(9, Math.min(13, width / 75)));
   const zoomMin = $derived(view && home ? view.z <= home.z - 2 + 1e-6 : false);
   const zoomMax = $derived(view ? view.z >= ZOOM_MAX - 1e-6 : false);
@@ -227,7 +289,7 @@
       class:moving
       viewBox="0 0 {width} {height}"
       role="application"
-      aria-label="{label}. Arrow keys move the map, plus and minus zoom."
+      aria-label="{label}. Arrow keys move the map, plus and minus zoom, Shift and the arrows rotate."
       tabindex="0"
       onpointerdown={down}
       onpointermove={move}
@@ -240,24 +302,45 @@
       }}
       onkeydown={keys}
     >
-      {#each layers as l (l.z)}
-        <g aria-hidden="true">
-          {#each l.tiles as t (t.key)}
-            <!-- A hair over size so tile edges don't show seams. -->
-            <image href={t.url} x={t.x} y={t.y} width={t.size + 0.5} height={t.size + 0.5} />
-          {/each}
-        </g>
-      {/each}
+      <g aria-hidden="true" transform={view.a ? `rotate(${deg(view.a)} ${width / 2} ${height / 2})` : undefined}>
+        {#each layers as l (l.z)}
+          <g>
+            {#each l.tiles as t (t.key)}
+              <image href={t.url} x={t.x} y={t.y} width={t.size + overlap} height={t.size + overlap} />
+            {/each}
+          </g>
+        {/each}
+      </g>
       {#each cars as c (c.car)}
-        {@render dot(c, sx(worldX(c.lon)), sy(worldY(c.lat)), r)}
+        {@const p = place(worldX(c.lon), worldY(c.lat))}
+        {@render dot(c, p[0], p[1], r)}
       {/each}
     </svg>
-    <div class="zoom">
-      <button onclick={() => zoomAt(1)} disabled={zoomMax} aria-label="Zoom in" title="Zoom in">+</button>
-      <button onclick={() => zoomAt(-1)} disabled={zoomMin} aria-label="Zoom out" title="Zoom out">−</button>
-      <button onclick={reset} aria-label="Show the whole track" title="Show the whole track">
-        <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M2 6V2h4M10 2h4v4M14 10v4h-4M6 14H2v-4" /></svg>
-      </button>
+    <div class="controls">
+      <div class="group">
+        <button onclick={() => zoomAt(1)} disabled={zoomMax} aria-label="Zoom in" title="Zoom in">+</button>
+        <button onclick={() => zoomAt(-1)} disabled={zoomMin} aria-label="Zoom out" title="Zoom out">−</button>
+      </div>
+      <div class="group">
+        <button onclick={() => rotate(-STEP)} aria-label="Rotate left" title="Rotate left (or Shift + drag)">
+          <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M3 8a5 5 0 1 0 1.46-3.54M3 2v3h3" /></svg>
+        </button>
+        <button onclick={() => rotate(STEP)} aria-label="Rotate right" title="Rotate right (or Shift + drag)">
+          <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M13 8a5 5 0 1 1-1.46-3.54M13 2v3h-3" /></svg>
+        </button>
+        {#if view.a}
+          <button onclick={north} aria-label="North up" title="North up">
+            <svg class="compass" viewBox="0 0 16 16" aria-hidden="true" style:transform="rotate({deg(view.a)}deg)">
+              <path class="n" d="M8 1 12 8H4z" /><path d="M8 15 12 8H4z" />
+            </svg>
+          </button>
+        {/if}
+      </div>
+      <div class="group">
+        <button onclick={reset} aria-label="Show the whole track" title="Show the whole track, north up">
+          <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M2 6V2h4M10 2h4v4M14 10v4h-4M6 14H2v-4" /></svg>
+        </button>
+      </div>
     </div>
   {:else if width}
     <p class="empty">Waiting for cars to report…</p>
@@ -296,10 +379,15 @@
   .moving :global(*) {
     transition: none !important;
   }
-  .zoom {
+  .controls {
     position: absolute;
     top: 10px;
     right: 10px;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+  }
+  .group {
     display: flex;
     flex-direction: column;
     border-radius: 8px;
@@ -307,7 +395,7 @@
     box-shadow: 0 1px 4px rgba(0, 0, 0, 0.3);
     overflow: hidden;
   }
-  .zoom button {
+  .group button {
     display: grid;
     place-items: center;
     width: 32px;
@@ -322,17 +410,17 @@
     line-height: 1;
     cursor: pointer;
   }
-  .zoom button + button {
+  .group button + button {
     border-top: 1px solid var(--border);
   }
-  .zoom button:hover:not(:disabled) {
+  .group button:hover:not(:disabled) {
     background: var(--surface-2);
   }
-  .zoom button:disabled {
+  .group button:disabled {
     color: var(--faint);
     cursor: default;
   }
-  .zoom svg {
+  .group svg {
     width: 14px;
     height: 14px;
     fill: none;
@@ -340,6 +428,15 @@
     stroke-width: 1.8;
     stroke-linecap: round;
     stroke-linejoin: round;
+  }
+  .group svg.compass {
+    width: 16px;
+    height: 16px;
+    stroke: none;
+    fill: var(--faint);
+  }
+  .compass .n {
+    fill: var(--critical);
   }
   .empty {
     position: absolute;

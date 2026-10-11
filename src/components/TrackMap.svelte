@@ -222,7 +222,7 @@
         {#if minsLeft != null}<span class="muted">Token good for {minsLeft} more min.</span>{/if}
         <button class="link" onclick={() => ((selected = null), telemetry.forget())}>Stop</button>
       </p>
-      <p class="muted">Drag to move the map; scroll or pinch to zoom. Imagery: Esri, Maxar, Earthstar Geographics</p>
+      <p class="muted">Drag to move the map; scroll or pinch to zoom; Shift-drag or twist to rotate. Imagery: Esri, Maxar, Earthstar Geographics</p>
     {:else if telemetry.status === 'live'}
       <p>
         Connected to NASCAR's live GPS. Waiting for cars to report; positions are estimated until then.
