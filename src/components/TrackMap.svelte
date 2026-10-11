@@ -1,4 +1,6 @@
 <script lang="ts">
+  import { SvelteSet } from 'svelte/reactivity';
+  import { feeds } from '../lib/api';
   import { lapTime, parseTimestamp, speed } from '../lib/format';
   import type { RaceInsights } from '../lib/insights';
   import { telemetry, TOKEN_URL } from '../lib/telemetry.svelte';
@@ -146,6 +148,9 @@
     }
   }
   const minsLeft = $derived(telemetry.expires ? Math.max(0, Math.round((telemetry.expires - now) / 60_000)) : null);
+
+  // Cars show NASCAR's number artwork (the leaderboard's, so usually cached); a number without one shows as text.
+  const noBadge = new SvelteSet<string>();
 </script>
 
 {#snippet carDot(d: ReturnType<typeof base>, x: number, y: number, r: number, gps: boolean)}
@@ -167,7 +172,19 @@
   >
     <title>{label}</title>
     <circle {r} />
-    <text dy="0.35em" font-size={r * 1.05}>{d.car}</text>
+    {#if noBadge.has(d.car)}
+      <text dy="0.35em" font-size={r * 1.05}>{d.car}</text>
+    {:else}
+      <!-- 78×70 artwork, as big as fits in the circle. -->
+      <image
+        href={feeds.carBadge(live.series_id, d.car)}
+        x={-r * 0.8}
+        y={-r * 0.72}
+        width={r * 1.6}
+        height={r * 1.44}
+        onerror={() => noBadge.add(d.car)}
+      />
+    {/if}
   </g>
 {/snippet}
 
@@ -191,7 +208,7 @@
   {:else}
     <svg viewBox={geo?.box ?? '0 0 1 1'} aria-label="Estimated car positions around {track.name}">
       <path bind:this={lineEl} class="line" d={track.line} />
-      {#if track.pit}<path bind:this={pitEl} class="pit" d={track.pit} />{/if}
+      {#if track.pit}<path bind:this={pitEl} class="pit-road" d={track.pit} />{/if}
       {#if geo && track.finish}
         <line class="finish" x1={track.finish[0]} x2={track.finish[0]} y1={track.finish[1] - geo.r * 1.6} y2={track.finish[1] + geo.r * 2.4} />
       {/if}
@@ -290,7 +307,7 @@
     stroke-width: 22;
     stroke-linejoin: round;
   }
-  .pit {
+  .pit-road {
     fill: none;
     stroke: var(--grid);
     stroke-width: 8;
@@ -319,17 +336,14 @@
     font-variant-numeric: tabular-nums;
   }
   .card :global(.car.leader circle) {
-    fill: var(--accent);
     stroke: var(--accent);
-  }
-  .card :global(.car.leader text) {
-    fill: #fff;
+    stroke-width: 4;
   }
   .card :global(.car.lapped) {
     opacity: 0.55;
   }
   .card :global(.car.pit circle) {
-    stroke-dasharray: 4 3;
+    stroke-dasharray: 3.5 2.5;
   }
   .card :global(.car.sel circle),
   .card :global(.car:focus-visible circle) {

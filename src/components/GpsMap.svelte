@@ -274,7 +274,7 @@
   });
   // Tile edges overlap a little so they don't show seams, a little more when turned (edges are smoothed).
   const overlap = $derived(view?.a ? 1 : 0.5);
-  const r = $derived(Math.max(9, Math.min(13, width / 75)));
+  const r = $derived(Math.max(11, Math.min(15, width / 70)));
   const zoomMin = $derived(view && home ? view.z <= home.z - 2 + 1e-6 : false);
   const zoomMax = $derived(view ? view.z >= ZOOM_MAX - 1e-6 : false);
 </script>
