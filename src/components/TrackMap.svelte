@@ -70,6 +70,10 @@
     pit: !!insights?.cars.get(v.vehicle_number)?.onPitRoad,
   });
 
+  // Drawn in this order: the leader over the rest, and the selected car over everything, so it shows in a pack.
+  const drawOrder = (a: { car: string; pos: number }, b: { car: string; pos: number }) =>
+    (a.car === selected ? 1e3 : -a.pos) - (b.car === selected ? 1e3 : -b.pos);
+
   // ---- Live GPS (Ably, with a token the viewer brings from nascar.com), placed on satellite imagery ----
 
   $effect(() => telemetry.want(running.map((v) => v.vehicle_number)));
@@ -83,7 +87,7 @@
         const p = seen && now - seen < FRESH_MS ? telemetry.at(v.vehicle_number) : null;
         return p ? [{ ...base(v), lat: p.lat, lon: p.lon }] : [];
       })
-      .sort((a, b) => b.pos - a.pos); // leader drawn last, on top
+      .sort(drawOrder);
   });
   const gpsMode = $derived(gpsCars.length > 0);
   // Positions only exist once playback is running, so start it when cars start reporting.
@@ -117,7 +121,7 @@
         }
         return { ...b, x: p.x, y: p.y };
       })
-      .sort((a, b) => b.pos - a.pos); // leader drawn last, on top
+      .sort(drawOrder);
   });
   const onPit = $derived(running.map(base).filter((d) => d.pit).sort((a, b) => a.pos - b.pos));
 
@@ -200,6 +204,7 @@
   {#if gpsMode}
     <GpsMap
       cars={gpsCars}
+      follow={selected}
       center={track?.center ?? null}
       trackLength={live.track_length}
       label="Live car positions{track ? ` around ${track.name}` : ''}"
@@ -239,7 +244,7 @@
     {#if gpsMode}
       <p>
         Live GPS from NASCAR for {gpsCars.length} of {running.length} cars{gpsCars.length < running.length ? ' (the rest aren’t reporting)' : ''}.
-        {selected ? '' : 'Select a car for its speed, throttle and brake.'}
+        {selected ? '' : 'Select a car to follow it and see its speed, pedals and steering.'}
         {#if minsLeft != null}<span class="muted">Token good for {minsLeft} more min.</span>{/if}
         <button class="link" onclick={() => ((selected = null), telemetry.forget())}>Stop</button>
       </p>

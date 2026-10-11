@@ -7,13 +7,14 @@
 </script>
 
 <script lang="ts" generics="T extends GpsCar">
-  import type { Snippet } from 'svelte';
+  import { untrack, type Snippet } from 'svelte';
 
   // Cars placed straight from GPS on satellite imagery, like nascar.com's own map: plain web-mercator maths over
-  // Esri World Imagery tiles, no map library. It opens framed on the track, north up, and never moves on its own;
-  // the viewer pans, zooms and rotates it. Only shown while live GPS is streaming.
+  // Esri World Imagery tiles, no map library. It opens framed on the track, north up, and only moves on its own to
+  // follow the selected car; the viewer pans, zooms and rotates it. Only shown while live GPS is streaming.
   let {
     cars,
+    follow,
     center,
     trackLength,
     label,
@@ -21,6 +22,8 @@
   }: {
     /** Drawn in order, so put the leader last. */
     cars: T[];
+    /** The car to keep in the middle of the map (the selected one). */
+    follow: string | null;
     /** [lat, lon] of the track, to frame the map on. */
     center: [number, number] | null;
     /** Miles. */
@@ -103,9 +106,10 @@
       a,
     };
   }
-  /** Zooms by `dz` levels and turns by `da`, keeping the point at (px, py) still. */
+  /** Zooms by `dz` levels and turns by `da`, keeping the point at (px, py) still (or the car being followed). */
   function zoomAt(dz: number, px = width / 2, py = height / 2, da = 0) {
     if (!view || !home) return;
+    if (following) [px, py] = [width / 2, height / 2];
     const [ox, oy] = turn(px - width / 2, py - height / 2, -view.a);
     const ax = view.x + ox / 2 ** view.z;
     const ay = view.y + oy / 2 ** view.z;
@@ -116,6 +120,8 @@
   }
   function panBy(dx: number, dy: number) {
     if (!view) return;
+    // Moving the map lets go of the car being followed.
+    stopFollowing();
     const [wx, wy] = turn(dx, dy, -view.a);
     setView({ ...view, x: view.x - wx / 2 ** view.z, y: view.y - wy / 2 ** view.z });
   }
@@ -124,9 +130,58 @@
   function reset() {
     const c = center ?? homeAt;
     if (!c) return;
+    stopFollowing();
     home = homeView(c);
     setView(home);
   }
+
+  // ---- Following the selected car ----
+
+  let following = $state(false);
+  /** Where the map's middle was when following began, to glide from. */
+  let glide: { x: number; y: number; at: number } | null = null;
+  let lastSeen: [number, number] | null = null;
+  // While following, the map's middle is the car, this frame; the rest of the view (zoom, turn) is the viewer's.
+  const shown = $derived.by((): View | null => {
+    if (!view || !following) return view;
+    const c = cars.find((c) => c.car === follow);
+    // A car that drops out of the feed for a moment holds where it was last.
+    if (c) lastSeen = [worldX(c.lon), worldY(c.lat)];
+    if (!lastSeen) return view;
+    let [x, y] = lastSeen;
+    if (glide) {
+      // Half a second, easing out. Positions move every frame while following, so this is recomputed each frame.
+      const k = Math.min(1, (performance.now() - glide.at) / 500);
+      const e = 1 - (1 - k) ** 3;
+      x = glide.x + (x - glide.x) * e;
+      y = glide.y + (y - glide.y) * e;
+      if (k === 1) glide = null;
+    }
+    return { ...view, x, y };
+  });
+  function startFollowing() {
+    const from = shown;
+    glide = from ? { x: from.x, y: from.y, at: performance.now() } : null;
+    lastSeen = null;
+    following = true;
+  }
+  function stopFollowing() {
+    if (!following) return;
+    // Stay where the car had taken the map.
+    if (shown) view = { ...shown };
+    following = false;
+    glide = null;
+  }
+  let followed: string | null = null;
+  $effect(() => {
+    const car = follow;
+    untrack(() => {
+      if (car === followed) return;
+      followed = car;
+      if (car) startFollowing();
+      else stopFollowing();
+    });
+  });
 
   let svg = $state<SVGSVGElement>();
   const at = (e: MouseEvent) => {
@@ -178,7 +233,7 @@
         turned = da !== 0;
       }
       dragged = true;
-      panBy((p.x - prev.x) / 2, (p.y - prev.y) / 2);
+      if (!following) panBy((p.x - prev.x) / 2, (p.y - prev.y) / 2);
       if (before > 0) zoomAt(Math.log2(after / before), (p.x + other.x) / 2, (p.y + other.y) / 2, da);
     }
     pointers.set(e.pointerId, p);
@@ -229,11 +284,11 @@
 
   // Tiles are laid out north up and the layer is turned as a whole; cars are turned here, so their numbers stay
   // upright.
-  const scale = $derived(view ? 2 ** view.z : 1);
-  const sx = (x: number) => (x - view!.x) * scale + width / 2;
-  const sy = (y: number) => (y - view!.y) * scale + height / 2;
+  const scale = $derived(shown ? 2 ** shown.z : 1);
+  const sx = (x: number) => (x - shown!.x) * scale + width / 2;
+  const sy = (y: number) => (y - shown!.y) * scale + height / 2;
   function place(x: number, y: number): [number, number] {
-    const [px, py] = turn((x - view!.x) * scale, (y - view!.y) * scale, view!.a);
+    const [px, py] = turn((x - shown!.x) * scale, (y - shown!.y) * scale, shown!.a);
     return [px + width / 2, py + height / 2];
   }
 
@@ -242,14 +297,14 @@
     const size = per * scale;
     const last = 2 ** tz - 1;
     // What's on screen as a north-up box, which grows when the map is turned.
-    const cos = Math.abs(Math.cos(view!.a));
-    const sin = Math.abs(Math.sin(view!.a));
+    const cos = Math.abs(Math.cos(shown!.a));
+    const sin = Math.abs(Math.sin(shown!.a));
     const hw = (width * cos + height * sin) / 2 / scale;
     const hh = (width * sin + height * cos) / 2 / scale;
-    const x0 = Math.floor((view!.x - hw) / per);
-    const x1 = Math.floor((view!.x + hw) / per);
-    const y0 = Math.max(0, Math.floor((view!.y - hh) / per));
-    const y1 = Math.min(last, Math.floor((view!.y + hh) / per));
+    const x0 = Math.floor((shown!.x - hw) / per);
+    const x1 = Math.floor((shown!.x + hw) / per);
+    const y0 = Math.max(0, Math.floor((shown!.y - hh) / per));
+    const y1 = Math.min(last, Math.floor((shown!.y + hh) / per));
     const out: { key: string; url: string; x: number; y: number; size: number }[] = [];
     for (let ty = y0; ty <= y1; ty++) {
       for (let tx = x0; tx <= x1; tx++) {
@@ -260,9 +315,9 @@
   }
   // The level in view, over the level the map opened at (already loaded), so zooming in never shows blank squares.
   const layers = $derived.by(() => {
-    if (!view || !width || !height) return [];
+    if (!shown || !width || !height) return [];
     const level = (z: number) => Math.max(1, Math.min(TILE_MAX, Math.round(z)));
-    const tz = level(view.z);
+    const tz = level(shown.z);
     const under = home ? level(home.z) : tz;
     return (under < tz ? [under, tz] : [tz]).map((z) => ({ z, tiles: tiles(z) }));
   });
@@ -309,6 +364,17 @@
         {@render dot(c, p[0], p[1], r)}
       {/each}
     </svg>
+    {#if follow}
+      <button
+        class="follow"
+        aria-pressed={following}
+        onclick={() => (following ? stopFollowing() : startFollowing())}
+        title={following ? 'Stop following (or drag the map)' : `Keep #${follow} in the middle`}
+      >
+        <svg viewBox="0 0 16 16" aria-hidden="true"><circle cx="8" cy="8" r="4.5" /><path d="M8 1v3M8 12v3M1 8h3M12 8h3" /></svg>
+        {following ? 'Following' : 'Follow'} #{follow}
+      </button>
+    {/if}
     <div class="controls">
       <div class="group">
         <button onclick={() => zoomAt(1)} disabled={zoomMax} aria-label="Zoom in" title="Zoom in">+</button>
@@ -368,6 +434,35 @@
   .map > svg:focus-visible {
     outline: 2px solid var(--accent);
     outline-offset: -2px;
+  }
+  .follow {
+    position: absolute;
+    top: 10px;
+    left: 10px;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 6px 10px;
+    border: 0;
+    border-radius: 8px;
+    background: var(--surface);
+    box-shadow: 0 1px 4px rgba(0, 0, 0, 0.3);
+    color: var(--ink);
+    font: inherit;
+    font-size: 13px;
+    font-weight: 600;
+    cursor: pointer;
+  }
+  .follow[aria-pressed='true'] {
+    color: var(--accent);
+  }
+  .follow svg {
+    width: 14px;
+    height: 14px;
+    fill: none;
+    stroke: currentColor;
+    stroke-width: 1.8;
+    stroke-linecap: round;
   }
   .controls {
     position: absolute;
