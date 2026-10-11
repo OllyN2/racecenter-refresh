@@ -178,7 +178,11 @@ tab, which is the GPS map alone and asks for the token first. These two channels
     `leadLap` (always empty).
   - The site plays every car back at one shared moment, as far behind as the next fix usually takes to arrive
     (~5 s, the same lag as drawing each message on arrival), on a curve through the fixes from their heading and
-    speed, with the readings eased between samples (`src/lib/playback.ts`). Replaying the race, that cut frames where
+    speed, with the readings eased between samples (`src/lib/playback.ts`). The pedals, rpm and `mph` are in step
+    (rpm/mph is steadiest with `mph` read 0.2 s later; a fitted model of acceleration from throttle, brake and
+    speed explains the speed changes best with no shift), so speed and rpm follow that model between samples
+    instead of a straight line: 2.1 mph out on held-back samples against 3.7, and the speed falls while the brake is
+    on rather than after. Replaying the race, that cut frames where
     a car lurched from 6.4% to 0.1% and kept cars on the racing line (11 m off at worst before, 1.3 m after).
     Channels are attached with `rewind: "6s"`, so cars show at once.
 - Channel `VehicleEntryList` (✓ live) pushes a leaderboard snapshot every 15 s (~20 KB, so ~5 MB an hour), in the same

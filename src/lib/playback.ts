@@ -2,12 +2,12 @@
 //
 // Measured over the 2026-10-11 Charlotte Cup race (138k messages): each car reports every ~1.7 s, and its GPS is
 // clean (it agrees with the reported speed to ±2% and the heading to a few degrees). But a fix is 0.9–3 s old when
-// it arrives, varying from message to message and car to car, and ~1% of messages repeat an old fix. Drawing each
-// message as it arrives makes cars lurch, cut corners on straight lines between fixes, and sit seconds apart in time
-// from the car beside them. So every car is drawn at one shared moment a few seconds back, between the two fixes
-// either side of it: on a curve through them that follows their own heading and speed (within ~1 m of where the car
-// really was, against ~12 m for a straight line), with speed, throttle, brake, rpm and steering eased between the
-// same two samples.
+// it arrives, varying from message to message, and ~1% of messages repeat an old fix. Drawing each message as it
+// arrives makes cars lurch and cut corners on straight lines between fixes. So every car is drawn at one shared
+// moment a few seconds back, between the two fixes either side of it: on a curve through them that follows their own
+// heading and speed (within ~1 m of where the car really was, against ~12 m for a straight line), with throttle,
+// brake and steering eased between the same two samples, and speed and rpm following what the pedals were doing
+// (see speedBetween).
 
 export interface Fix {
   /** When the fix was taken (NASCAR's clock, ms). */
@@ -49,6 +49,38 @@ const wrap = (a: number) => Math.atan2(Math.sin(a), Math.cos(a));
 const bearing = (a: Fix, b: Fix) => Math.atan2((b.lon - a.lon) * Math.cos(a.lat * RAD), b.lat - a.lat);
 const metres = (a: Fix, b: Fix) => Math.hypot((b.lon - a.lon) * Math.cos(a.lat * RAD), b.lat - a.lat) * M_PER_DEG;
 const mix = (a: number | null, b: number | null, u: number) => (a == null ? b : b == null ? a : a + (b - a) * u);
+
+/**
+ * A car's acceleration (mph/s) from throttle and brake (0–100) at a speed, fitted on 192k pairs of samples from the
+ * 2026-10-11 Charlotte Cup race: it explains 77% of the speed change between samples, and as much on cars left out
+ * of the fit.
+ */
+const accel = (throttle: number, brake: number, mph: number) =>
+  0.7164 - 0.009705 * throttle - 0.06636 * brake - 0.0002916 * mph * mph + 0.000741 * throttle * mph;
+
+/**
+ * Speed a fraction u of the way from sample a to b. A straight line spreads the change evenly over the 1.7 s, so the
+ * speed seems to trail the pedals: it keeps falling hardest after the brake has come off. Instead the modelled
+ * acceleration is followed from a with the pedals eased as they're shown, and whatever the model misses by b is
+ * spread evenly, so both samples are still hit exactly. On held-back samples that's 2.1 mph out (RMS) against 3.7.
+ */
+function speedBetween(a: Fix, b: Fix, u: number): number {
+  const line = a.mph + (b.mph - a.mph) * u;
+  // Fitted at racing speed, not pit-stall shuffling.
+  if (a.throttle == null || b.throttle == null || a.brake == null || b.brake == null || a.mph < 30 || b.mph < 30) return line;
+  const steps = 16;
+  const dt = (b.t - a.t) / 1000 / steps;
+  let v = a.mph;
+  let atU = v;
+  for (let s = 0; s < steps; s++) {
+    const m = (s + 0.5) / steps;
+    const next = v + accel(a.throttle + (b.throttle - a.throttle) * m, a.brake + (b.brake - a.brake) * m, v) * dt;
+    if (u * steps >= s && u * steps <= s + 1) atU = v + (next - v) * (u * steps - s);
+    v = next;
+  }
+  // Never far outside the two samples, whatever the model makes of an odd stretch.
+  return clamp(atU + (b.mph - v) * u, Math.min(a.mph, b.mph) - 3, Math.max(a.mph, b.mph) + 3);
+}
 
 /** One `VehicleData` message, cleaned up; null without a usable position. */
 export function toFix(d: Record<string, unknown>): Fix | null {
@@ -149,13 +181,17 @@ export class CarTrack {
     const h11 = u3 - u2;
     const x = h10 * ax0 + h01 * bx + h11 * bx1;
     const y = h10 * ay0 + h01 * by + h11 * by1;
+    const mph = speedBetween(a, b, u);
+    const line = a.mph + (b.mph - a.mph) * u;
+    const rpm = mix(a.rpm, b.rpm, u);
     return {
       lat: a.lat + y / M_PER_DEG,
       lon: a.lon + x / kx,
-      mph: mix(a.mph, b.mph, u)!,
+      mph,
       throttle: mix(a.throttle, b.throttle, u),
       brake: mix(a.brake, b.brake, u),
-      rpm: mix(a.rpm, b.rpm, u),
+      // In one gear rpm goes with speed, so it follows the same curve.
+      rpm: rpm != null && a.gear === b.gear && line > 1 ? (rpm * mph) / line : rpm,
       gear: u < 0.5 ? a.gear : b.gear,
       steer: mix(a.steer, b.steer, u),
     };
