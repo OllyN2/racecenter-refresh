@@ -160,11 +160,26 @@ and the other endpoints on `feed.racinginsights.com` found nothing else.
 positions, car telemetry and a faster leaderboard. The site uses it only when the viewer pastes a token on the Track
 tab. These two channels are all nascar.com attaches. Ably doesn't compress the socket (no `permessage-deflate`).
 
-- Channel `vehicle{number}` (✓ used; the live feed's `vehicle_number`) pushes one car's `location` [lat, lon], `mph`,
-  `nGear`, `Throttle Position` (0–100), `Brake Pressure` (nascar.com shows it as a percentage of 250),
-  `Engine Speed`, `aSteering`, `Heading`, `leadLap` and `raceID`, about every 1.5 s per car in a race. The Track tab
-  attaches every running car, and an open driver panel attaches that one car. Messages for another `raceID` are
-  dropped.
+- Channel `vehicle{number}` (✓ used; the live feed's `vehicle_number`) pushes one car's `VehicleData` about every
+  1.7 s in a race. The Track tab attaches every running car, and an open driver panel attaches that one car. Messages
+  for another `raceID` are dropped. Measured over 138k messages of the 2026-10-11 Cup race:
+  - `location` [lat, lon] and `locationTimestamp` (ms, on whole tenths of a second) are the fix. The GPS is clean:
+    the distance between fixes matches the reported speed to ±2% and their direction matches `Heading` to a few
+    degrees. But a fix is 0.9–3 s old when it arrives (median 2 s), and ~1% of messages repeat an old fix or
+    position, or arrive out of order.
+  - `timestamp` is in ms in some messages and µs in others.
+  - `mph` (whole numbers) is always there. `Speed` and `Heading` (degrees from north) are finer, but drop out as
+    both 0 (5% of messages), and three cars (#35, #88, #66) never sent them.
+  - `aSteering` is the steering wheel angle in degrees, positive left. Cars sit 5–28° right on the straights (oval
+    setups), past 90° only at walking pace in the pits, and ±360 is a glitch.
+  - `Throttle Position` 0–100 (occasionally 101); `Brake Pressure` up to ~1,500 (nascar.com shows it as a
+    percentage of 250); `Engine Speed` (some cars read near 0 for laps at a time); `nGear` (−1 at walking pace);
+    `leadLap` (always empty).
+  - The site plays every car back at one shared moment, as far behind as the next fix usually takes to arrive
+    (~5 s, the same lag as drawing each message on arrival), on a curve through the fixes from their heading and
+    speed, with the readings eased between samples (`src/lib/playback.ts`). Replaying the race, that cut frames where
+    a car lurched from 6.4% to 0.1% and kept cars on the racing line (11 m off at worst before, 1.3 m after).
+    Channels are attached with `rewind: "6s"`, so cars show at once.
 - Channel `VehicleEntryList` (✓ live) pushes a leaderboard snapshot every 15 s (~20 KB, so ~5 MB an hour), in the same
   shape as `raceSessionResults/{S}/{R}/race/results.json`. Per car: `no`, `ps` (position), `lap` (laps completed),
   `lap_tm`/`best_tm` (ms), `spd`/`best_spd`, `delta_tm` (ms behind the leader) and `delta_lap` (laps down),

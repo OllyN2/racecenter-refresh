@@ -89,8 +89,6 @@
     x * Math.sin(a) + y * Math.cos(a),
   ];
 
-  let moving = $state(false);
-  let settle = 0;
   function setView(v: View) {
     if (!home) return;
     const z = Math.max(home.z - 2, Math.min(ZOOM_MAX, v.z));
@@ -104,10 +102,6 @@
       z,
       a,
     };
-    // Dots glide between GPS fixes; while the map moves they must jump with it.
-    moving = true;
-    clearTimeout(settle);
-    settle = window.setTimeout(() => (moving = false), 150);
   }
   /** Zooms by `dz` levels and turns by `da`, keeping the point at (px, py) still. */
   function zoomAt(dz: number, px = width / 2, py = height / 2, da = 0) {
@@ -286,7 +280,6 @@
     <!-- svelte-ignore a11y_no_noninteractive_tabindex, a11y_no_noninteractive_element_interactions -->
     <svg
       bind:this={svg}
-      class:moving
       viewBox="0 0 {width} {height}"
       role="application"
       aria-label="{label}. Arrow keys move the map, plus and minus zoom, Shift and the arrows rotate."
@@ -375,9 +368,6 @@
   .map > svg:focus-visible {
     outline: 2px solid var(--accent);
     outline-offset: -2px;
-  }
-  .moving :global(*) {
-    transition: none !important;
   }
   .controls {
     position: absolute;

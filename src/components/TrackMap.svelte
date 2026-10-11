@@ -74,17 +74,21 @@
 
   $effect(() => telemetry.want(running.map((v) => v.vehicle_number)));
   const FRESH_MS = 8000;
+  // Cars that have reported lately, where playback has them this frame.
   const gpsCars = $derived.by(() => {
     if (telemetry.status !== 'live') return [];
     return running
       .flatMap((v) => {
-        const c = telemetry.cars.get(v.vehicle_number);
-        return c && now - c.at < FRESH_MS ? [{ ...base(v), lat: c.lat, lon: c.lon }] : [];
+        const seen = telemetry.seen.get(v.vehicle_number);
+        const p = seen && now - seen < FRESH_MS ? telemetry.at(v.vehicle_number) : null;
+        return p ? [{ ...base(v), lat: p.lat, lon: p.lon }] : [];
       })
       .sort((a, b) => b.pos - a.pos); // leader drawn last, on top
   });
   const gpsMode = $derived(gpsCars.length > 0);
-  const glide = $derived(Math.round(Math.max(250, Math.min(2000, telemetry.interval))));
+  // Positions only exist once playback is running, so start it when cars start reporting.
+  const reporting = $derived(telemetry.status === 'live' && telemetry.seen.size > 0);
+  $effect(() => (reporting ? telemetry.animate() : undefined));
 
   // ---- Estimated positions on the track drawing, from lap timing ----
 
@@ -119,7 +123,7 @@
 
   let selected = $state<string | null>(null);
   const selectedCar = $derived(running.find((v) => v.vehicle_number === selected));
-  const selectedTel = $derived(selected && telemetry.status === 'live' ? telemetry.cars.get(selected) : undefined);
+  const selectedTel = $derived(!!selected && telemetry.status === 'live' && telemetry.seen.has(selected));
   const pick = (car: string) => (selected = selected === car ? null : car);
 
   // ---- Token form ----
@@ -161,8 +165,8 @@
     class:lapped={d.lapped}
     class:pit={d.pit}
     class:sel={d.car === selected}
+    class:gps
     style:transform="translate({x}px, {y}px)"
-    style:transition-duration={gps ? `${glide}ms` : null}
     role="button"
     tabindex="0"
     aria-label={label}
@@ -224,7 +228,7 @@
     <div class="picked">
       <p class="who">P{selectedCar.running_position} <strong>#{selectedCar.vehicle_number} {selectedCar.driver.full_name}</strong></p>
       {#if selectedTel}
-        <TelemetryStrip t={selectedTel} />
+        <TelemetryStrip car={selectedCar.vehicle_number} />
       {:else if selectedCar.last_lap_time > 0}
         <p class="who">Last lap {lapTime(selectedCar.last_lap_time)} · {speed(selectedCar.last_lap_speed)} mph</p>
       {/if}
@@ -322,6 +326,10 @@
     transition: transform 0.25s linear;
     cursor: pointer;
     outline: none;
+  }
+  /* Live GPS dots are placed afresh every frame. */
+  .card :global(.car.gps) {
+    transition: none;
   }
   .card :global(.car circle) {
     fill: var(--surface);

@@ -68,16 +68,16 @@
   }
   const signed = (n: number) => (n > 0 ? `+${n}` : `${n}`);
 
-  // Live speed, throttle and brake, when the viewer has connected NASCAR's live GPS on the Track tab.
+  // Live speed, pedals, rpm and steering, when the viewer has connected NASCAR's live GPS on the Track tab.
   $effect(() => telemetry.want([insight.car]));
-  const tel = $derived(telemetry.status === 'live' ? telemetry.cars.get(insight.car) : undefined);
+  const tel = $derived(telemetry.status === 'live' && telemetry.seen.has(insight.car));
 </script>
 
 <div class="detail">
   <section>
     {#if tel}
       <h4>Live</h4>
-      <div class="live"><TelemetryStrip t={tel} /></div>
+      <div class="live"><TelemetryStrip car={insight.car} /></div>
     {/if}
     {#if spark}
       <h4>Green-flag lap times <span class="hint">higher is faster · ticks are pit stops</span></h4>

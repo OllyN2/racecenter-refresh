@@ -2,23 +2,12 @@
 // the viewer brings one from their own visit there; it never leaves this browser except to go to Ably.
 // This is a minimal client for Ably's JSON WebSocket protocol: connect, attach `vehicle{number}` channels and
 // `VehicleEntryList` (NASCAR's leaderboard push), read messages. It's closed while the tab is hidden and whenever
-// nothing on screen wants live data.
+// nothing on screen wants live data. Cars are played back smoothly a few seconds behind (see playback.ts).
 
+import { CarTrack, PlaybackClock, toFix, type CarState } from './playback';
 import type { EntryList, EntryListCar } from './types';
 
-export interface CarTelemetry {
-  lat: number;
-  lon: number;
-  mph: number | null;
-  gear: number | null;
-  /** 0–100 */
-  throttle: number | null;
-  /** 0–100, NASCAR's brake pressure / 250 (as nascar.com shows it). */
-  brake: number | null;
-  rpm: number | null;
-  /** Local time the message arrived (ms). */
-  at: number;
-}
+export type { CarState };
 
 export type TelemetryStatus = 'off' | 'connecting' | 'live' | 'expired';
 
@@ -105,11 +94,12 @@ class Telemetry {
   /** Why the last connection failed, in words for the viewer. */
   problem = $state('');
   expires = $state<number | null>(null);
-  cars = $state.raw<ReadonlyMap<string, CarTelemetry>>(new Map());
+  /** When each car's latest fix arrived (local ms). */
+  seen = $state.raw<ReadonlyMap<string, number>>(new Map());
   /** The latest leaderboard push for the live race, while connected. */
   board = $state.raw<EntryList | null>(null);
-  /** Typical gap between messages for one car (ms), so dots can glide between fixes. */
-  interval = $state(1000);
+  /** The moment cars are shown at (NASCAR's clock, ms), moved on every frame while something animates. */
+  playhead = $state(0);
 
   #token = '';
   #raceId: number | null = null;
@@ -118,8 +108,12 @@ class Telemetry {
   #boardWants = 0;
   /** Channel names. */
   #attached = new Set<string>();
-  #pending = new Map<string, CarTelemetry>();
+  #tracks = new Map<string, CarTrack>();
+  #clock = new PlaybackClock();
+  #pending = new Map<string, number>();
   #flush = 0;
+  #animating = 0;
+  #frame = 0;
   #retry = 0;
   #retryTimer = 0;
   #retrying = false;
@@ -168,16 +162,43 @@ class Telemetry {
     this.#close();
     this.status = 'off';
     this.problem = '';
-    this.cars = new Map();
+    this.#reset();
   }
 
   /** Only stream during a live race, and drop anything from another race. */
   setRace(id: number | null) {
     if (id === this.#raceId) return;
     this.#raceId = id;
-    this.cars = new Map();
+    this.#reset();
     this.board = null;
     this.#queue();
+  }
+
+  #reset() {
+    this.seen = new Map();
+    this.#tracks.clear();
+    this.#pending.clear();
+    this.#clock = new PlaybackClock();
+  }
+
+  /** Keep `playhead` moving while the caller is on screen. Returns the function that stops it. */
+  animate(): () => void {
+    if (!this.#animating++) this.#tick(performance.now());
+    return () => {
+      if (!--this.#animating) cancelAnimationFrame(this.#frame);
+    };
+  }
+
+  // Timed from the frame's own timestamp, not from when this happens to run within it, which varies by a few ms and
+  // made cars stutter.
+  #tick = (frame: number) => {
+    this.playhead = this.#clock.time(performance.timeOrigin + frame);
+    this.#frame = requestAnimationFrame(this.#tick);
+  };
+
+  /** A car where it was at `playhead`, with its speed, pedals, rpm, gear and steering then. */
+  at(car: string): CarState | null {
+    return this.#tracks.get(car)?.at(this.playhead) ?? null;
   }
 
   /** Ask for live data for these cars while the caller is on screen. Returns the function that stops it. */
@@ -258,8 +279,9 @@ class Telemetry {
     }
     if (this.status !== 'live') return;
     for (const c of want) {
-      // rewind=1: Ably sends the last leaderboard straight away rather than at the next push, up to 15 s later.
-      if (!this.#attached.has(c)) this.#send({ action: ATTACH, channel: c, ...(c === BOARD && { params: { rewind: '1' } }) });
+      // Ably resends the last leaderboard and the last few seconds of each car, so they show at once instead of at
+      // the next push (up to 15 s later) or once playback reaches the first fix (~3 s).
+      if (!this.#attached.has(c)) this.#send({ action: ATTACH, channel: c, params: { rewind: c === BOARD ? '1' : '6s' } });
     }
     for (const c of this.#attached) {
       if (!want.has(c)) {
@@ -414,34 +436,22 @@ class Telemetry {
     if (!d || typeof d !== 'object') return;
     const race = num(d.raceID);
     if (race != null && race !== this.#raceId) return;
-    const loc = Array.isArray(d.location) ? d.location.map(num) : [];
-    const prev = this.#pending.get(car) ?? this.cars.get(car);
-    const lat = loc[0] ?? prev?.lat;
-    const lon = loc[1] ?? prev?.lon;
-    if (lat == null || lon == null || Math.abs(lat) > 90 || Math.abs(lon) > 180 || (lat === 0 && lon === 0)) return;
-    const brake = num(d['Brake Pressure']);
-    const now = Date.now();
-    if (prev && loc.length) {
-      const gap = now - prev.at;
-      if (gap > 50 && gap < 10_000) this.interval += (gap - this.interval) * 0.05;
-    }
-    this.#pending.set(car, {
-      lat,
-      lon,
-      mph: num(d.mph),
-      gear: num(d.nGear),
-      throttle: num(d['Throttle Position']),
-      brake: brake == null ? null : (brake / 250) * 100,
-      rpm: num(d['Engine Speed']),
-      at: loc.length ? now : (prev?.at ?? now),
-    });
-    // Hand changes to the page at most 4 times a second.
+    const fix = toFix(d);
+    if (!fix) return;
+    let track = this.#tracks.get(car);
+    if (!track) this.#tracks.set(car, (track = new CarTrack()));
+    const prev = track.fixes.at(-1)?.t ?? null;
+    if (!track.add(fix)) return;
+    // The same steady clock as the frames (Date.now() can be stepped by the system).
+    this.#clock.arrived(performance.timeOrigin + performance.now(), fix.t, prev);
+    this.#pending.set(car, Date.now());
+    // Hand arrivals to the page at most 4 times a second (positions come from `at`, every frame).
     this.#flush ||= window.setTimeout(() => {
       this.#flush = 0;
-      const next = new Map(this.cars);
+      const next = new Map(this.seen);
       for (const [k, v] of this.#pending) next.set(k, v);
       this.#pending.clear();
-      this.cars = next;
+      this.seen = next;
     }, 250);
   }
 }
