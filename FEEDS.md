@@ -113,10 +113,10 @@ and the other endpoints on `feed.racinginsights.com` found nothing else.
 
 | Feed | Size | Used | Found | What it has |
 | --- | --- | --- | --- | --- |
-| `cf/cacher/tracks/trackMapConfigs.json` | 269 KB | ✓ build | web | Per track: map rotation and zoom, center latitude/longitude, the racing line as ordered SVG path segments from the start/finish line, pit road paths and finish-line position. `npm run tracks` splits it into `public/tracks/{trackId}.json` (~2 KB each). The Track tab places cars on the line from live-feed timing, and the center checks the weather file's location. The map numbers (rotation, `svgOffset.rotation`, zoom, `svgScale.large`) are where fitting live GPS to the drawing starts (`src/lib/gpsfit.ts`). nascar.com draws the SVG as an OpenLayers icon at `center + svgOffset` with those settings, but that lands cars ~40 SVG px off the line, so the site fits its own rotation, scale and shift to the cars' GPS instead. |
+| `cf/cacher/tracks/trackMapConfigs.json` | 269 KB | ✓ build | web | Per track: map rotation and zoom, center latitude/longitude, the racing line as ordered SVG path segments from the start/finish line, pit road paths and finish-line position. `npm run tracks` splits it into `public/tracks/{trackId}.json` (~2 KB each). The Track tab places cars on the line from live-feed timing, and the center checks the weather file's location. nascar.com's map (OpenLayers) places live GPS dots straight from latitude/longitude, over either Esri satellite tiles or this SVG pinned at `center + svgOffset` with the config's zoom, rotation and `svgScale`. The SVG isn't drawn to scale, so its hand-set placement can't be trusted for GPS; this site shows live GPS on satellite tiles instead (see below). |
 | `cf/cacher/tracks/layouts.json` | 337 KB | | web | Per track: GPS bounds, heading, finish-line coordinates. |
 | `cf/data/images/vector-tracks/svg/{trackId}.svg` | ~2 KB | | web | Plain outline of the track. |
-| `cf/cacher/tracks/dots.json` | 819 KB | | web | nascar.com's `?replay` sample of the per-car Ably messages: Phoenix, races 5427 and 5428, 4 cars each, about 1 message per car per second (`timestamp`, `vehicle_id`, `raceID`, `location` [lat, lon], `mph`, `nGear`, `Throttle Position`, `Brake Pressure`, `Engine Speed`, `aSteering`). Used to test the GPS fit and the Track tab offline. |
+| `cf/cacher/tracks/dots.json` | 819 KB | | web | nascar.com's `?replay` sample of the per-car Ably messages: Phoenix, races 5427 and 5428, 4 cars each, about 1 message per car per second (`timestamp`, `vehicle_id`, `raceID`, `location` [lat, lon], `mph`, `nGear`, `Throttle Position`, `Brake Pressure`, `Engine Speed`, `aSteering`). Used to test the Track tab's GPS map offline. |
 | `cf/cacher/tracks/trackPreview.webm` | 2.2 MB | | web | Preview video shown before the map loads. |
 
 ## Weather
@@ -165,6 +165,13 @@ positions and car telemetry. The site uses it only when the viewer pastes a toke
   and never fakes NASCAR's origin. The viewer runs the one-liner the Track tab shows in the console of their own
   nascar.com tab and pastes the result. The token is kept only in that browser (`localStorage`, until it expires),
   and the socket closes while the page is hidden or nothing on screen needs it.
+- **Satellite tiles** (✓ used, only while live GPS is streaming):
+  `server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}`, Esri World Imagery, the
+  same imagery nascar.com's map can use. It's a JPEG of ~15 KB per 256 px tile, and about 12 tiles frame a track.
+  Cars are placed straight from GPS with web-mercator maths. There's no map library and no fitting; on the Phoenix
+  sample every fix lands on the racing surface. The frame starts as a box around the track center sized from the
+  track length. It tightens to where the cars drive once they've been seen all the way round, and is remembered per
+  track. Attribution: Esri, Maxar, Earthstar Geographics.
 
 ## Not usable from this site
 

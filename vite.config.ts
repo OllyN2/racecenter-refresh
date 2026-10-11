@@ -5,7 +5,8 @@ const CSP = [
   "default-src 'self'",
   "script-src 'self'",
   "style-src 'self' 'unsafe-inline'",
-  "img-src 'self' data: https://cf.nascar.com",
+  // server.arcgisonline.com: Esri satellite tiles behind live GPS on the Track tab.
+  "img-src 'self' data: https://cf.nascar.com https://server.arcgisonline.com",
   // 'self' for the per-track map files in public/tracks; sa.aws.nascar.com serves NRN radio (HLS); Ably carries
   // live GPS and telemetry when the viewer brings a token.
   "connect-src 'self' https://cf.nascar.com https://ai.nascar.com https://s3.nascar.com https://sa.aws.nascar.com wss://main.realtime.ably.net",
