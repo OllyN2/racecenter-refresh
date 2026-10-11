@@ -121,7 +121,9 @@
   const pick = (car: string) => (selected = selected === car ? null : car);
 
   // ---- Token form ----
-  const SNIPPET = `copy(await (await fetch('${TOKEN_URL}')).text())`;
+  // Ends with the token itself, so the console shows it (copy() alone prints a puzzling "undefined"). A unique
+  // global name so it can't clobber one of nascar.com's own.
+  const SNIPPET = `copy(JSON.stringify(nascarToken = await (await fetch('${TOKEN_URL}')).json())); nascarToken`;
   let showForm = $state(false);
   let tokenInput = $state('');
   let tokenError = $state('');
@@ -250,10 +252,11 @@
           <ol>
             <li>Open <a href="https://www.nascar.com/" target="_blank" rel="noreferrer">nascar.com</a> in another tab, then its browser console (F12, then Console).</li>
             <li>
-              Run this there. It copies a token to your clipboard:
+              Run this there. It shows the token and copies it to your clipboard (Chrome may first ask you to type
+              <q>allow pasting</q>):
               <span class="snippet"><code>{SNIPPET}</code><button class="link" onclick={copySnippet}>{copied ? 'Copied' : 'Copy'}</button></span>
             </li>
-            <li>Paste the token here.</li>
+            <li>Paste it here.</li>
           </ol>
           <form onsubmit={submit}>
             <input

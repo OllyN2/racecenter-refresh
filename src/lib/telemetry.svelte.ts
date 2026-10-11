@@ -34,19 +34,29 @@ interface Stored {
   expires: number;
 }
 
-/** Accepts the raw token, or the JSON the token URL returns (which also says when it expires). */
+/**
+ * Accepts the JSON the token URL returns (which also says when it expires), the raw token, or anything with the
+ * token in it, such as the object the browser console prints.
+ */
 export function parseToken(input: string): Stored | null {
   const s = input.trim().replace(/^['"`]+|['"`]+$/g, '');
   if (s.startsWith('{')) {
     try {
       const j = JSON.parse(s);
-      if (typeof j.token !== 'string') return null;
-      return { token: j.token, expires: Number.isFinite(j.expires) ? j.expires : Date.now() + TOKEN_LIFE };
+      if (typeof j.token === 'string') {
+        return { token: j.token, expires: Number.isFinite(j.expires) ? j.expires : Date.now() + TOKEN_LIFE };
+      }
     } catch {
-      return null;
+      /* not JSON: look for the token in it below */
     }
   }
-  return /^[\w.-]{20,}$/.test(s) ? { token: s, expires: Date.now() + TOKEN_LIFE } : null;
+  if (/^[\w.-]{20,}$/.test(s)) return { token: s, expires: Date.now() + TOKEN_LIFE };
+  // NASCAR's tokens are JWEs: five dot-separated base64url parts, the second empty. A console preview that cut the
+  // token short ("…") won't match.
+  const token = s.match(/eyJ[\w-]+\.[\w-]*\.[\w-]+\.[\w-]+\.[\w-]+/)?.[0];
+  if (!token) return null;
+  const exp = Number(s.match(/expires['"]?\s*:\s*(\d{12,})/)?.[1]);
+  return { token, expires: Number.isFinite(exp) ? exp : Date.now() + TOKEN_LIFE };
 }
 
 function decode(m: { data?: unknown; encoding?: string }): unknown {
