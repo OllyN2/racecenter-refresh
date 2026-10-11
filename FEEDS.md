@@ -119,7 +119,7 @@ and the other endpoints on `feed.racinginsights.com` found nothing else.
 
 | Feed | Size | Used | Found | What it has |
 | --- | --- | --- | --- | --- |
-| `cf/cacher/tracks/trackMapConfigs.json` | 269 KB | ✓ build | web | Per track: map rotation and zoom, center latitude/longitude, the racing line as ordered SVG path segments from the start/finish line, pit road paths and finish-line position. `npm run tracks` splits it into `public/tracks/{trackId}.json` (~2 KB each). The Track tab places cars on the line from live-feed timing, and the center checks the weather file's location. nascar.com's map (OpenLayers) places live GPS dots straight from latitude/longitude, over either Esri satellite tiles or this SVG pinned at `center + svgOffset` with the config's zoom, rotation and `svgScale`. The SVG isn't drawn to scale, so its hand-set placement can't be trusted for GPS; this site shows live GPS on satellite tiles instead (see below). |
+| `cf/cacher/tracks/trackMapConfigs.json` | 269 KB | ✓ build | web | Per track: map rotation and zoom, center latitude/longitude, the racing line as ordered SVG path segments from the start/finish line, pit road paths and finish-line position. `npm run tracks` keeps each track's name and center in `public/tracks/{trackId}.json` (~70 bytes each): the GPS map opens on it, and the weather check compares it with the forecast's location. nascar.com's map (OpenLayers) places live GPS dots straight from latitude/longitude, over either Esri satellite tiles or this SVG pinned at `center + svgOffset` with the config's zoom, rotation and `svgScale`. The SVG isn't drawn to scale, so its hand-set placement can't be trusted for GPS; this site shows live GPS on satellite tiles only (see below). |
 | `cf/cacher/tracks/layouts.json` | 337 KB | | web | Per track: GPS bounds, heading, finish-line coordinates. |
 | `cf/data/images/vector-tracks/svg/{trackId}.svg` | ~2 KB | | web | Plain outline of the track. |
 | `cf/cacher/tracks/dots.json` | 819 KB | | web | nascar.com's `?replay` sample of the per-car Ably messages: Phoenix, races 5427 and 5428, 4 cars each, about 1 message per car per second (`timestamp`, `vehicle_id`, `raceID`, `location` [lat, lon], `mph`, `nGear`, `Throttle Position`, `Brake Pressure`, `Engine Speed`, `aSteering`). Used to test the Track tab's GPS map offline. |
@@ -157,8 +157,8 @@ and the other endpoints on `feed.racinginsights.com` found nothing else.
 ## Live GPS and telemetry (viewer's own token)
 
 **Ably realtime** (`wss://main.realtime.ably.net`, JSON protocol `v=6`, `heartbeats=bounce`) carries NASCAR's GPS
-positions, car telemetry and a faster leaderboard. The site uses it only when the viewer pastes a token on the Track
-tab. These two channels are all nascar.com attaches. Ably doesn't compress the socket (no `permessage-deflate`).
+positions, car telemetry and a faster leaderboard. The site uses it only with a token the viewer pastes on the Track
+tab, which is the GPS map alone and asks for the token first. These two channels are all nascar.com attaches. Ably doesn't compress the socket (no `permessage-deflate`).
 
 - Channel `vehicle{number}` (✓ used; the live feed's `vehicle_number`) pushes one car's `VehicleData` about every
   1.7 s in a race. The Track tab attaches every running car, and an open driver panel attaches that one car. Messages

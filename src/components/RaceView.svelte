@@ -282,7 +282,7 @@
         <TrackMap live={raceLive} {insights} />
       {/await}
     {:else}
-      <div class="card"><p class="empty">The track map runs during a live race.</p></div>
+      <div class="card"><p class="empty">The live GPS map runs during a live race.</p></div>
     {/if}
   {:else if tab === 'notes'}
     <LapNotes {year} series={race.series_id} raceId={race.race_id} {isLive} startMs={raceStartMs(race)} {drivers} />
