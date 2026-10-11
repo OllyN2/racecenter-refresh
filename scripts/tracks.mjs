@@ -24,6 +24,11 @@ for (const [id, t] of Object.entries(all)) {
     finish: d.FinishLine ? [Number(d.FinishLine.TranslateX), Number(d.FinishLine.TranslateY)] : null,
     // [lat, lon], used to check that NASCAR's weather file is for this track.
     center: t.center ? [Number(t.center.latitude.toFixed(4)), Number(t.center.longitude.toFixed(4))] : null,
+    // How NASCAR lays this SVG over the map; the starting point for lining live GPS up with it (src/lib/gpsfit.ts).
+    map:
+      t.svgScale?.large && t.zoom
+        ? { rotation: t.rotation ?? 0, svgRotation: t.svgOffset?.rotation ?? 0, zoom: t.zoom, scale: t.svgScale.large }
+        : null,
   };
   fs.writeFileSync(new URL(`${id}.json`, OUT), JSON.stringify(track));
   n++;

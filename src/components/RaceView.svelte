@@ -17,6 +17,7 @@
   } from '../lib/normalize';
   import { useFeed } from '../lib/poll.svelte';
   import { href, TABS, type Tab } from '../lib/route.svelte';
+  import { telemetry } from '../lib/telemetry.svelte';
   import type {
     AltLeaderboards,
     LapTimes,
@@ -35,7 +36,6 @@
   import PositionChart from './PositionChart.svelte';
   import RaceHeader from './RaceHeader.svelte';
   import StagesPoints from './StagesPoints.svelte';
-  import TrackMap from './TrackMap.svelte';
 
   let {
     race,
@@ -71,6 +71,9 @@
 
   const raceLive = $derived(live?.run_type === 3 ? live : undefined);
   const raceFeed = $derived(raceLive ?? (snapshot?.run_type === 3 ? snapshot : undefined));
+  // Live GPS and telemetry only stream during the race.
+  const liveRaceId = $derived(raceLive?.race_id ?? null);
+  $effect(() => telemetry.setRace(liveRaceId));
 
   // Cautions for the header's lap bar and the Stages tab. The weekend feed only lists them after the race, so
   // until it does they come from live-flag-data (<1 KB).
@@ -268,7 +271,12 @@
     {/if}
   {:else if tab === 'track'}
     {#if raceLive}
-      <TrackMap live={raceLive} {insights} />
+      <!-- Only during a live race, so its code (and the GPS fitting) loads when the tab is opened. -->
+      {#await import('./TrackMap.svelte')}
+        <div class="card"><p class="empty">Loading track…</p></div>
+      {:then { default: TrackMap }}
+        <TrackMap live={raceLive} {insights} />
+      {/await}
     {:else}
       <div class="card"><p class="empty">The track map runs during a live race.</p></div>
     {/if}

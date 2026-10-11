@@ -6,8 +6,9 @@ const CSP = [
   "script-src 'self'",
   "style-src 'self' 'unsafe-inline'",
   "img-src 'self' data: https://cf.nascar.com",
-  // 'self' for the per-track map files in public/tracks; sa.aws.nascar.com serves NRN radio (HLS).
-  "connect-src 'self' https://cf.nascar.com https://ai.nascar.com https://s3.nascar.com https://sa.aws.nascar.com",
+  // 'self' for the per-track map files in public/tracks; sa.aws.nascar.com serves NRN radio (HLS); Ably carries
+  // live GPS and telemetry when the viewer brings a token.
+  "connect-src 'self' https://cf.nascar.com https://ai.nascar.com https://s3.nascar.com https://sa.aws.nascar.com wss://main.realtime.ably.net",
   // blob: is how hls.js hands audio to the <audio> element.
   'media-src blob: https://downforce.nascar.com https://sa.aws.nascar.com',
   "base-uri 'none'",

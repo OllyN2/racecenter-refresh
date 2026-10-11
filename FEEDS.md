@@ -113,10 +113,10 @@ and the other endpoints on `feed.racinginsights.com` found nothing else.
 
 | Feed | Size | Used | Found | What it has |
 | --- | --- | --- | --- | --- |
-| `cf/cacher/tracks/trackMapConfigs.json` | 269 KB | ✓ build | web | Per track: map rotation and zoom, center latitude/longitude, the racing line as ordered SVG path segments from the start/finish line, pit road paths and finish-line position. `npm run tracks` splits it into `public/tracks/{trackId}.json` (~2 KB each). The Track tab places cars on the line from live-feed timing, and the center checks the weather file's location. |
+| `cf/cacher/tracks/trackMapConfigs.json` | 269 KB | ✓ build | web | Per track: map rotation and zoom, center latitude/longitude, the racing line as ordered SVG path segments from the start/finish line, pit road paths and finish-line position. `npm run tracks` splits it into `public/tracks/{trackId}.json` (~2 KB each). The Track tab places cars on the line from live-feed timing, and the center checks the weather file's location. The map numbers (rotation, `svgOffset.rotation`, zoom, `svgScale.large`) are where fitting live GPS to the drawing starts (`src/lib/gpsfit.ts`). nascar.com draws the SVG as an OpenLayers icon at `center + svgOffset` with those settings, but that lands cars ~40 SVG px off the line, so the site fits its own rotation, scale and shift to the cars' GPS instead. |
 | `cf/cacher/tracks/layouts.json` | 337 KB | | web | Per track: GPS bounds, heading, finish-line coordinates. |
 | `cf/data/images/vector-tracks/svg/{trackId}.svg` | ~2 KB | | web | Plain outline of the track. |
-| `cf/cacher/tracks/dots.json` | 819 KB | | web | A sample of the per-car Ably messages (`location`, `mph`, gear, throttle, brake, RPM, steering). Format reference only. |
+| `cf/cacher/tracks/dots.json` | 819 KB | | web | nascar.com's `?replay` sample of the per-car Ably messages: Phoenix, races 5427 and 5428, 4 cars each, about 1 message per car per second (`timestamp`, `vehicle_id`, `raceID`, `location` [lat, lon], `mph`, `nGear`, `Throttle Position`, `Brake Pressure`, `Engine Speed`, `aSteering`). Used to test the GPS fit and the Track tab offline. |
 | `cf/cacher/tracks/trackPreview.webm` | 2.2 MB | | web | Preview video shown before the map loads. |
 
 ## Weather
@@ -148,15 +148,26 @@ and the other endpoints on `feed.racinginsights.com` found nothing else.
 | `cf/rewards/prod/*.json`, `cf/mobile-cms/ar_sim_feed.json`, `cf/cacher/2020/1/ar-portal-feed.json`, `cf/mobile-cms/splash/**` | | | app | Fan rewards, AR features and splash animations. App-only. |
 | `fantasygames.nascar.com` | | | app | Fantasy games API base. Not checked further. |
 
+## Live GPS and telemetry (viewer's own token)
+
+**Ably realtime** (`wss://main.realtime.ably.net`, JSON protocol `v=6`, `heartbeats=bounce`) carries NASCAR's GPS
+positions and car telemetry. The site uses it only when the viewer pastes a token on the Track tab.
+
+- Channel `vehicle{number}` (✓ used) pushes one car's `location` [lat, lon], `mph`, `nGear`, `Throttle Position`
+  (0–100), `Brake Pressure` (nascar.com shows it as a percentage of 250), `Engine Speed` and `aSteering`, along with
+  `raceID`. The sample in `dots.json` runs at about 1 message per car per second. The Track tab attaches every
+  running car, and an open driver panel attaches that one car. Messages for another `raceID` are dropped.
+- Channel `VehicleEntryList` pushes a leaderboard snapshot about every 15 s, in the same shape as
+  `raceSessionResults/{S}/{R}/race/results.json`. Not used.
+- **Tokens** come from `f2akd1igr7.execute-api.us-east-1.amazonaws.com/Prod?nlbwa=1`, which answers only
+  `www.nascar.com` (other origins get a 502). It returns ready-made TokenDetails: `token`, `keyName`, `issued`,
+  `expires` (1 hour), and `capability` `{"[*]*":["history","presence","subscribe"]}`. The site never asks for a token
+  and never fakes NASCAR's origin. The viewer runs the one-liner the Track tab shows in the console of their own
+  nascar.com tab and pastes the result. The token is kept only in that browser (`localStorage`, until it expires),
+  and the socket closes while the page is hidden or nothing on screen needs it.
+
 ## Not usable from this site
 
-- **Ably realtime** (`wss://main.realtime.ably.net`) carries NASCAR's GPS positions and telemetry.
-  - Channel `VehicleEntryList` pushes a leaderboard snapshot about every 15 s.
-  - Channel `vehicle{number}` pushes each car's GPS `location`, `mph`, `nGear`, `Throttle Position`, `Brake Pressure`,
-    `Engine Speed` and `aSteering`.
-  - Tokens come from `f2akd1igr7.execute-api.us-east-1.amazonaws.com/Prod?nlbwa=1`, which only answers requests from
-    `www.nascar.com`; other origins get a 502. Getting around that would mean faking NASCAR's origin, so the site
-    doesn't.
 - **Sportvision RaceView stream**: `wss://test.nascardatalive.com/raceviewweb` (app) no longer resolves. The staging
   `ws://dev.nascardatalive.com:5002/racefeed` is unencrypted, which browsers block on HTTPS pages.
 - **NASCAR Drive** (`cf/drive/{S}/configs-ng.json`): needs CloudFront signed cookies.

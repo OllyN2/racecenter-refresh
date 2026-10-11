@@ -1,7 +1,9 @@
 <script lang="ts">
   import { lapTime, speed } from '../lib/format';
   import type { CarInsight, Stint } from '../lib/insights';
+  import { telemetry } from '../lib/telemetry.svelte';
   import type { RawResult } from '../lib/types';
+  import TelemetryStrip from './TelemetryStrip.svelte';
 
   let { insight, raw }: { insight: CarInsight; raw?: RawResult } = $props();
 
@@ -65,10 +67,18 @@
     return r.tires === 0 ? 'None' : `${r.tires}`;
   }
   const signed = (n: number) => (n > 0 ? `+${n}` : `${n}`);
+
+  // Live speed, throttle and brake, when the viewer has connected NASCAR's live GPS on the Track tab.
+  $effect(() => telemetry.want([insight.car]));
+  const tel = $derived(telemetry.status === 'live' ? telemetry.cars.get(insight.car) : undefined);
 </script>
 
 <div class="detail">
   <section>
+    {#if tel}
+      <h4>Live</h4>
+      <div class="live"><TelemetryStrip t={tel} /></div>
+    {/if}
     {#if spark}
       <h4>Green-flag lap times <span class="hint">higher is faster · ticks are pit stops</span></h4>
       <div class="spark">
@@ -181,6 +191,9 @@
   }
   section {
     min-width: 0;
+  }
+  .live {
+    margin-bottom: 12px;
   }
   h4 {
     margin: 6px 0 8px;
